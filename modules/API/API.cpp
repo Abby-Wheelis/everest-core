@@ -596,6 +596,7 @@ void API::init() {
     if (this->r_ocpp.size() == 1) {
 
         this->r_ocpp.at(0)->subscribe_is_connected([this](bool is_connected) {
+	    EVLOG_info << "Received OCPP connection status callback with is_connected: " << is_connected;
             std::scoped_lock lock(ocpp_data_mutex);
             if (is_connected) {
                 this->ocpp_connection_status = "connected";
@@ -605,6 +606,7 @@ void API::init() {
         });
 
         this->r_ocpp.at(0)->subscribe_charging_schedules([this, &var_ocpp_schedule](json schedule) {
+	    EVLOG_info << "Received OCPP charging schedule update: " << schedule;
             std::scoped_lock lock(ocpp_data_mutex);
             this->ocpp_charging_schedule = schedule;
             this->ocpp_charging_schedule_updated = true;

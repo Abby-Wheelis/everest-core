@@ -1289,6 +1289,9 @@ void OCPP201::process_reservation_end(const int32_t evse_id, const int32_t conne
 }
 
 void OCPP201::publish_charging_schedules(const std::vector<ocpp::v201::CompositeSchedule>& composite_schedules) {
+    EVLOG_info << "About to publish composite charging schedules: ";
+    for (ocpp::v201::CompositeSchedule cs: composite_schedules)
+           EVLOG_info << cs << '\n';
     const auto everest_schedules = conversions::to_everest_charging_schedules(composite_schedules);
     this->p_ocpp_generic->publish_charging_schedules(everest_schedules);
 }
