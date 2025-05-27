@@ -97,7 +97,13 @@ class PyEVJosevModule():
     # implementation handlers
 
     def _handler_start_charging(self, args) -> bool:
+        log.debug("in handle start charging")
+        log.debug("DepartureTime " + str(args["DepartureTime"]))
+        log.debug("EAmount " + str(args["EAmount"]))
+        log.debug("EnergyTransferMode " + args["EnergyTransferMode"])
 
+        self._es.DepartureTime = args['DepartureTime']
+        self._es.EAmount = args['EAmount']
         self._es.EnergyTransferMode = args['EnergyTransferMode']
 
         self._ready_event.set()
