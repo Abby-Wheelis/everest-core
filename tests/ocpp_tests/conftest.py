@@ -4,6 +4,7 @@
 # noinspection PyUnresolvedReferences
 from everest.testing.core_utils.fixtures import *
 from everest.testing.core_utils.probe_module import ProbeModule
+from everest.testing.ocpp_utils.charge_point_utils import OcppTestConfiguration
 
 # pylint: disable-next=unused-import
 from everest.testing.ocpp_utils.fixtures import (
@@ -24,6 +25,8 @@ from typing import Any, Callable
 
 import logging
 
+import pytest
+
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -39,8 +42,8 @@ def pytest_sessionfinish(session, exitstatus):
 
 
 @pytest.fixture
-def test_config(request):
-    return everest_test_utils.test_config(request)
+def test_config() -> OcppTestConfiguration:
+    return everest_test_utils.load_test_config()
 
 
 @pytest.fixture
@@ -191,7 +194,7 @@ def probe_module(
     implement_command(
         module,
         skip_implementation,
-        "ProbeModuleConnectorA",
+        "ProbeModuleIso15118Extensions",
         "set_get_certificate_response",
         lambda arg: None,
     )
@@ -200,6 +203,13 @@ def probe_module(
         skip_implementation,
         "ProbeModuleConnectorA",
         "external_ready_to_start_charging",
+        lambda arg: True,
+    )
+    implement_command(
+        module,
+        skip_implementation,
+        "ProbeModuleConnectorA",
+        "set_plug_and_charge_configuration",
         lambda arg: True,
     )
     implement_command(
@@ -283,14 +293,14 @@ def probe_module(
         module,
         skip_implementation,
         "ProbeModuleConnectorB",
-        "set_get_certificate_response",
-        lambda arg: None,
+        "external_ready_to_start_charging",
+        lambda arg: True,
     )
     implement_command(
         module,
         skip_implementation,
         "ProbeModuleConnectorB",
-        "external_ready_to_start_charging",
+        "set_plug_and_charge_configuration",
         lambda arg: True,
     )
     implement_command(

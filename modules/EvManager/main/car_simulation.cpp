@@ -206,16 +206,25 @@ bool CarSimulation::iso_dc_power_on(const CmdArguments& arguments) {
 }
 
 bool CarSimulation::iso_start_v2g_session(const CmdArguments& arguments, bool three_phases) {
+    //add departure time and eamount to arguments
+    //if have to provide but don't want to, use -1 as a flag to get default from config
     const auto& energy_mode = arguments[0];
+    const auto& departure_time = std::stoi(arguments[1]);
+    const auto& e_amount = std::stoi(arguments[2]);
+
+    EVLOG_debug << "energy mode: " << energy_mode << " departure time: " << departure_time << " eamount: " << e_amount << " three phases: " << three_phases;
+ 
 
     if (energy_mode == constants::AC) {
+        sim_data.energy_mode = EnergyMode::AC;
         if (three_phases == false) {
-            r_ev[0]->call_start_charging(types::iso15118_ev::EnergyTransferMode::AC_single_phase_core);
+            r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_single_phase_core, departure_time, e_amount);
         } else {
-            r_ev[0]->call_start_charging(types::iso15118_ev::EnergyTransferMode::AC_three_phase_core);
+            r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_three_phase_core, departure_time, e_amount);
         }
     } else if (energy_mode == constants::DC) {
-        r_ev[0]->call_start_charging(types::iso15118_ev::EnergyTransferMode::DC_extended);
+        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::DC_extended, departure_time, e_amount);
+        sim_data.energy_mode = EnergyMode::DC;
     } else {
         return false;
     }
@@ -261,11 +270,39 @@ bool CarSimulation::iso_wait_for_stop(const CmdArguments& arguments, size_t loop
         sim_data.sleep_ticks_left.reset();
         return true;
     }
+
+    if (sim_data.iso_d20_paused) {
+
+        const auto cmds =
+            std::array<std::string, 2>{"pause;iso_wait_v2g_session_stopped;sleep 2;iso_wait_pwm_is_running;",
+                                       "iso_wait_pwr_ready;iso_wait_for_stop 36000"};
+
+        EVLOG_info << "Charger wants to pause the session";
+        r_ev_board_support->call_allow_power_on(false);
+
+        // NOTE(sl): Change when the Energymode has more then 2 values
+        const std::string energy_mode = (sim_data.energy_mode == EnergyMode::AC) ? "AC" : "DC";
+        const std::string iso_start_v2g_session = "iso_start_v2g_session " + energy_mode + ";";
+
+        auto& modify_session_cmds = sim_data.modify_charging_session_cmds.emplace();
+
+        modify_session_cmds = cmds[0];
+        modify_session_cmds += iso_start_v2g_session;
+        modify_session_cmds += cmds[1];
+
+        sim_data.iso_pwr_ready = false;
+        sim_data.sleep_ticks_left.reset();
+        sim_data.iso_d20_paused = false;
+
+        // NOTE(sl): return false, otherwise the simulation will end too early before the session cmds can be adjusted
+        return false;
+    }
     return false;
 }
 
 bool CarSimulation::iso_wait_v2g_session_stopped(const CmdArguments& arguments) {
     if (sim_data.v2g_finished) {
+        sim_data.v2g_finished = false;
         return true;
     }
     return false;
@@ -302,3 +339,5 @@ bool CarSimulation::wait_for_real_plugin(const CmdArguments& arguments) {
     }
     return false;
 }
+
+

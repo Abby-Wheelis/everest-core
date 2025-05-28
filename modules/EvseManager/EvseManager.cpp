@@ -95,6 +95,10 @@ void EvseManager::init() {
         EVLOG_warning << "DC mode without isolation monitoring configured, please check your national regulations.";
     }
 
+    pnc_enabled = config.payment_enable_contract;
+    central_contract_validation_allowed = config.central_contract_validation_allowed;
+    contract_certificate_installation_enabled = config.contract_certificate_installation_enabled;
+
     reserved = false;
     reservation_id = -1;
 
@@ -107,7 +111,7 @@ void EvseManager::init() {
     // apply sane defaults capabilities settings once on boot
     powersupply_capabilities = get_sane_default_power_supply_capabilities();
 
-    if (get_hlc_enabled()) {
+    if (hlc_enabled) {
         if (config.charge_mode == "DC") {
             // subscribe to run time updates for real initial values (and changes e.g. due to de-rating)
             r_powersupply_DC[0]->subscribe_capabilities(
@@ -161,8 +165,14 @@ void EvseManager::ready() {
         bsp->set_ev_simplified_mode_evse_limit(true);
     }
 
+    // we provide the powermeter interface to the ErrorHandling only if we need to react to powermeter errors
+    // otherwise we provide an empty vector of pointers to the powermeter interface
+    const std::vector<std::unique_ptr<powermeterIntf>> empty;
     error_handling = std::unique_ptr<ErrorHandling>(
-        new ErrorHandling(r_bsp, r_hlc, r_connector_lock, r_ac_rcd, p_evse, r_imd, r_powersupply_DC));
+        new ErrorHandling(r_bsp, r_hlc, r_connector_lock, r_ac_rcd, p_evse, r_imd, r_powersupply_DC,
+                          config.fail_on_powermeter_errors ? r_powermeter_billing() : empty, r_over_voltage_monitor,
+                          config.inoperative_error_use_vendor_id));
+
     if (not config.lock_connector_in_state_b) {
         EVLOG_warning << "Unlock connector in CP state B. This violates IEC61851-1:2019 D.6.5 Table D.9 line 4 and "
                          "should not be used in public environments!";
@@ -179,25 +189,26 @@ void EvseManager::ready() {
         bsp->signal_unlock.connect([this]() { r_connector_lock[0]->call_unlock(); });
     }
 
-    if (get_hlc_enabled()) {
+    if (hlc_enabled) {
 
         // Set up EVSE ID
-        types::iso15118_charger::EVSEID evseid = {config.evse_id, config.evse_id_din};
+        types::iso15118::EVSEID evseid = {config.evse_id, config.evse_id_din};
 
         // Set up auth options for HLC
-        std::vector<types::iso15118_charger::PaymentOption> payment_options;
+        std::vector<types::iso15118::PaymentOption> payment_options;
 
         if (config.payment_enable_eim) {
-            payment_options.push_back(types::iso15118_charger::PaymentOption::ExternalPayment);
+            payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
         }
-        if (config.payment_enable_contract) {
-            payment_options.push_back(types::iso15118_charger::PaymentOption::Contract);
+        if (pnc_enabled) {
+            payment_options.push_back(types::iso15118::PaymentOption::Contract);
         }
-        if (config.payment_enable_eim == false and config.payment_enable_contract == false) {
+        if (config.payment_enable_eim == false and pnc_enabled == false) {
             EVLOG_warning << "Both payment options are disabled! ExternalPayment is nevertheless enabled in this case.";
-            payment_options.push_back(types::iso15118_charger::PaymentOption::ExternalPayment);
+            payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
         }
-        r_hlc[0]->call_session_setup(payment_options, config.payment_enable_contract);
+        r_hlc[0]->call_session_setup(payment_options, contract_certificate_installation_enabled,
+                                     central_contract_validation_allowed);
 
         r_hlc[0]->subscribe_dlink_error([this] {
             session_log.evse(true, "D-LINK_ERROR.req");
@@ -239,13 +250,18 @@ void EvseManager::ready() {
 
         // Ask HLC to stop charging session
         charger->signal_hlc_stop_charging.connect([this] { r_hlc[0]->call_stop_charging(true); });
+        charger->signal_hlc_pause_charging.connect([this] { r_hlc[0]->call_pause_charging(true); });
 
-        auto sae_mode = types::iso15118_charger::SaeJ2847BidiMode::None;
+        // Charger needs to inform ISO stack about emergency stop
+        charger->signal_hlc_error.connect(
+            [this](types::iso15118::EvseError error) { r_hlc[0]->call_send_error(error); });
+
+        auto sae_mode = types::iso15118::SaeJ2847BidiMode::None;
 
         // Set up energy transfer modes for HLC. For now we only support either DC or AC, not both at the same time.
-        std::vector<types::iso15118_charger::SupportedEnergyMode> transfer_modes;
+        std::vector<types::iso15118::SupportedEnergyMode> transfer_modes;
         if (config.charge_mode == "AC") {
-            types::iso15118_charger::SetupPhysicalValues setup_physical_values;
+            types::iso15118::SetupPhysicalValues setup_physical_values;
             setup_physical_values.ac_nominal_voltage = config.ac_nominal_voltage;
             r_hlc[0]->call_set_charging_parameters(setup_physical_values);
 
@@ -253,21 +269,21 @@ void EvseManager::ready() {
 
             // FIXME: we cannot change this during run time at the moment. Refactor ISO interface to exclude transfer
             // modes from setup
-            // transfer_modes.push_back(types::iso15118_charger::EnergyTransferMode::AC_single_phase_core);
-            transfer_modes.push_back({types::iso15118_charger::EnergyTransferMode::AC_three_phase_core, support_bidi});
+            // transfer_modes.push_back(types::iso15118::EnergyTransferMode::AC_single_phase_core);
+            transfer_modes.push_back({types::iso15118::EnergyTransferMode::AC_three_phase_core, support_bidi});
 
         } else if (config.charge_mode == "DC") {
-            transfer_modes.push_back({types::iso15118_charger::EnergyTransferMode::DC_extended, false});
+            transfer_modes.push_back({types::iso15118::EnergyTransferMode::DC_extended, false});
 
             const auto caps = get_powersupply_capabilities();
             update_powersupply_capabilities(caps);
 
             if (caps.bidirectional) {
-                transfer_modes.push_back({types::iso15118_charger::EnergyTransferMode::DC_extended, true});
+                transfer_modes.push_back({types::iso15118::EnergyTransferMode::DC_extended, true});
             }
 
             // Set present measurements on HLC to sane defaults
-            types::iso15118_charger::DcEvsePresentVoltageCurrent present_values;
+            types::iso15118::DcEvsePresentVoltageCurrent present_values;
             present_values.evse_present_voltage = 0;
             present_values.evse_present_current = 0;
             r_hlc[0]->call_update_dc_present_values(present_values);
@@ -288,11 +304,17 @@ void EvseManager::ready() {
                 current_demand_active = true;
                 apply_new_target_voltage_current();
                 charger->notify_currentdemand_started();
+                if (not r_over_voltage_monitor.empty()) {
+                    r_over_voltage_monitor[0]->call_start(get_over_voltage_threshold());
+                }
             });
 
             r_hlc[0]->subscribe_current_demand_finished([this] {
                 current_demand_active = false;
                 sae_bidi_active = false;
+                if (not r_over_voltage_monitor.empty()) {
+                    r_over_voltage_monitor[0]->call_stop();
+                }
             });
 
             // Isolation monitoring for DC charging handler
@@ -307,7 +329,7 @@ void EvseManager::ready() {
                     if (charger->get_current_state() == Charger::EvseState::Charging and
                         not check_isolation_resistance_in_range(m.resistance_F_Ohm)) {
                         charger->set_hlc_error();
-                        r_hlc[0]->call_send_error(types::iso15118_charger::EvseError::Error_EmergencyShutdown);
+                        r_hlc[0]->call_send_error(types::iso15118::EvseError::Error_EmergencyShutdown);
                     }
                     isolation_measurement = m;
                 });
@@ -322,7 +344,7 @@ void EvseManager::ready() {
             if (not r_powersupply_DC.empty()) {
                 r_powersupply_DC[0]->subscribe_voltage_current([this](types::power_supply_DC::VoltageCurrent m) {
                     powersupply_measurement = m;
-                    types::iso15118_charger::DcEvsePresentVoltageCurrent present_values;
+                    types::iso15118::DcEvsePresentVoltageCurrent present_values;
                     present_values.evse_present_voltage = (m.voltage_V > 0 ? m.voltage_V : 0.0);
                     if (config.sae_j2847_2_bpt_enabled) {
                         present_values.evse_present_current = m.current_A;
@@ -355,29 +377,91 @@ void EvseManager::ready() {
             }
 
             // Car requests a target voltage and current limit
-            r_hlc[0]->subscribe_dc_ev_target_voltage_current([this](types::iso15118_charger::DcEvTargetValues v) {
-                bool target_changed = false;
+            r_hlc[0]->subscribe_dc_ev_target_voltage_current(
+                [this](types::iso15118::DcEvTargetValues v) {
+                    bool target_changed = false;
 
-                // Hack for Skoda Enyaq that should be fixed in a different way
-                if (config.hack_skoda_enyaq and (v.dc_ev_target_voltage < 300 or v.dc_ev_target_current < 0))
-                    return;
+                    // Hack for Skoda Enyaq that should be fixed in a different way
+                    if (config.hack_skoda_enyaq and (v.dc_ev_target_voltage < 300 or v.dc_ev_target_current < 0))
+                        return;
 
-                // Limit voltage/current for broken EV implementations
-                const auto ev = get_ev_info();
-                if (ev.maximum_current_limit.has_value() and
-                    v.dc_ev_target_current > ev.maximum_current_limit.value()) {
-                    v.dc_ev_target_current = ev.maximum_current_limit.value();
+                    // Limit voltage/current for broken EV implementations
+                    const auto ev = get_ev_info();
+                    if (ev.maximum_current_limit.has_value() and
+                        v.dc_ev_target_current > ev.maximum_current_limit.value()) {
+                        v.dc_ev_target_current = ev.maximum_current_limit.value();
+                    }
+
+                    if (ev.maximum_voltage_limit.has_value() and
+                        v.dc_ev_target_voltage > ev.maximum_voltage_limit.value()) {
+                        v.dc_ev_target_voltage = ev.maximum_voltage_limit.value();
+                    }
+
+                    bool car_breaks_limit{false};
+                    const auto hlc_limits = charger->get_evse_max_hlc_limits();
+                    if (v.dc_ev_target_current > hlc_limits.evse_maximum_current_limit) {
+                        v.dc_ev_target_current = hlc_limits.evse_maximum_current_limit;
+                        car_breaks_limit = true;
+                    }
+
+                    const auto actual_voltage =
+                        ev_info.present_voltage.has_value() ? ev_info.present_voltage.value() : v.dc_ev_target_voltage;
+
+                    const auto target_power = v.dc_ev_target_current * actual_voltage;
+                    if (target_power > hlc_limits.evse_maximum_power_limit) {
+                        v.dc_ev_target_current = hlc_limits.evse_maximum_power_limit / actual_voltage;
+                        car_breaks_limit = true;
+                    }
+
+                    if (v.dc_ev_target_voltage not_eq latest_target_voltage or
+                        v.dc_ev_target_current not_eq latest_target_current) {
+                        latest_target_voltage = v.dc_ev_target_voltage;
+                        latest_target_current = v.dc_ev_target_current;
+                        target_changed = true;
+                    }
+
+                    if (target_changed) {
+                        apply_new_target_voltage_current();
+                        if (not contactor_open) {
+                            powersupply_DC_on();
+                        }
+                        if (car_breaks_limit) {
+                            EVLOG_warning
+                                << "EV ignores new EVSE max limits. Setting target current to new EVSE max limits";
+                        }
+
+                        {
+                            Everest::scoped_lock_timeout lock(ev_info_mutex,
+                                                              Everest::MutexDescription::EVSE_publish_ev_info);
+                            ev_info.target_voltage = latest_target_voltage;
+                            ev_info.target_current = latest_target_current;
+                            p_evse->publish_ev_info(ev_info);
+                        }
+                    }
+                });
+
+            r_hlc[0]->subscribe_d20_dc_dynamic_charge_mode([this](types::iso15118::DcChargeDynamicModeValues values) {
+                constexpr auto PRE_CHARGE_MAX_POWER = 800.0f;
+
+                bool target_changed{false};
+
+                if (values.min_voltage > latest_target_voltage) {
+                    latest_target_voltage = values.min_voltage + 10; // TODO(sl): Check if okay
+                    target_changed = true;
+                }
+                if (values.max_voltage < latest_target_voltage) {
+                    latest_target_voltage = values.max_voltage - 10; // TODO(sl): Check if okay
+                    target_changed = true;
                 }
 
-                if (ev.maximum_voltage_limit.has_value() and
-                    v.dc_ev_target_voltage > ev.maximum_voltage_limit.value()) {
-                    v.dc_ev_target_voltage = ev.maximum_voltage_limit.value();
-                }
+                const double latest_target_power = latest_target_voltage * latest_target_current;
 
-                if (v.dc_ev_target_voltage not_eq latest_target_voltage or
-                    v.dc_ev_target_current not_eq latest_target_current) {
-                    latest_target_voltage = v.dc_ev_target_voltage;
-                    latest_target_current = v.dc_ev_target_current;
+                if (latest_target_power <= PRE_CHARGE_MAX_POWER or values.min_charge_power > latest_target_power or
+                    values.max_charge_power < latest_target_power) {
+                    latest_target_current = static_cast<double>(values.max_charge_power) / latest_target_voltage;
+                    if (values.max_charge_current < latest_target_current) {
+                        latest_target_current = values.max_charge_current;
+                    }
                     target_changed = true;
                 }
 
@@ -397,48 +481,6 @@ void EvseManager::ready() {
                 }
             });
 
-            r_hlc[0]->subscribe_d20_dc_dynamic_charge_mode(
-                [this](types::iso15118_charger::DcChargeDynamicModeValues values) {
-                    constexpr auto PRE_CHARGE_MAX_POWER = 800.0f;
-
-                    bool target_changed{false};
-
-                    if (values.min_voltage > latest_target_voltage) {
-                        latest_target_voltage = values.min_voltage + 10; // TODO(sl): Check if okay
-                        target_changed = true;
-                    }
-                    if (values.max_voltage < latest_target_voltage) {
-                        latest_target_voltage = values.max_voltage - 10; // TODO(sl): Check if okay
-                        target_changed = true;
-                    }
-
-                    const double latest_target_power = latest_target_voltage * latest_target_current;
-
-                    if (latest_target_power <= PRE_CHARGE_MAX_POWER or values.min_charge_power > latest_target_power or
-                        values.max_charge_power < latest_target_power) {
-                        latest_target_current = static_cast<double>(values.max_charge_power) / latest_target_voltage;
-                        if (values.max_charge_current < latest_target_current) {
-                            latest_target_current = values.max_charge_current;
-                        }
-                        target_changed = true;
-                    }
-
-                    if (target_changed) {
-                        apply_new_target_voltage_current();
-                        if (not contactor_open) {
-                            powersupply_DC_on();
-                        }
-
-                        {
-                            Everest::scoped_lock_timeout lock(ev_info_mutex,
-                                                              Everest::MutexDescription::EVSE_publish_ev_info);
-                            ev_info.target_voltage = latest_target_voltage;
-                            ev_info.target_current = latest_target_current;
-                            p_evse->publish_ev_info(ev_info);
-                        }
-                    }
-                });
-
             // Car requests DC contactor open. We don't actually open but switch off DC supply.
             // opening will be done by Charger on C->B CP event.
             r_hlc[0]->subscribe_dc_open_contactor([this] {
@@ -456,7 +498,7 @@ void EvseManager::ready() {
             // Current demand has finished - switch off DC supply
             r_hlc[0]->subscribe_current_demand_finished([this] { powersupply_DC_off(); });
 
-            r_hlc[0]->subscribe_dc_ev_maximum_limits([this](types::iso15118_charger::DcEvMaximumLimits l) {
+            r_hlc[0]->subscribe_dc_ev_maximum_limits([this](types::iso15118::DcEvMaximumLimits l) {
                 EVLOG_info << "Received EV maximum limits: " << l;
                 Everest::scoped_lock_timeout lock(ev_info_mutex,
                                                   Everest::MutexDescription::EVSE_subscribe_dc_ev_maximum_limits);
@@ -534,7 +576,7 @@ void EvseManager::ready() {
                 p_evse->publish_ev_info(ev_info);
             });
 
-            r_hlc[0]->subscribe_dc_ev_remaining_time([this](types::iso15118_charger::DcEvRemainingTime t) {
+            r_hlc[0]->subscribe_dc_ev_remaining_time([this](types::iso15118::DcEvRemainingTime t) {
                 // FIXME send only on change / throttle messages
                 Everest::scoped_lock_timeout lock(ev_info_mutex,
                                                   Everest::MutexDescription::EVSE_subscribe_dc_ev_remaining_time);
@@ -543,7 +585,7 @@ void EvseManager::ready() {
                 p_evse->publish_ev_info(ev_info);
             });
 
-            r_hlc[0]->subscribe_dc_ev_status([this](types::iso15118_charger::DcEvStatus s) {
+            r_hlc[0]->subscribe_dc_ev_status([this](types::iso15118::DcEvStatus s) {
                 // FIXME send only on change / throttle messages
                 Everest::scoped_lock_timeout lock(ev_info_mutex,
                                                   Everest::MutexDescription::EVSE_subscribe_dc_ev_status);
@@ -554,7 +596,7 @@ void EvseManager::ready() {
             // SAE J2847/2 Bidi
             if (config.sae_j2847_2_bpt_enabled == true) {
 
-                sae_mode = types::iso15118_charger::string_to_sae_j2847bidi_mode(config.sae_j2847_2_bpt_mode);
+                sae_mode = types::iso15118::string_to_sae_j2847bidi_mode(config.sae_j2847_2_bpt_mode);
 
                 r_hlc[0]->subscribe_sae_bidi_mode_active([this] {
                     sae_bidi_active = true;
@@ -599,12 +641,8 @@ void EvseManager::ready() {
             //  Do we have auth already (i.e. delayed HLC after charging already running)?
             if ((config.dbg_hlc_auth_after_tstep and charger->get_authorized_eim_ready_for_hlc()) or
                 (not config.dbg_hlc_auth_after_tstep and charger->get_authorized_eim())) {
-                {
-                    Everest::scoped_lock_timeout lock(hlc_mutex,
-                                                      Everest::MutexDescription::EVSE_subscribe_require_auth_eim);
-                    hlc_waiting_for_auth_eim = false;
-                    hlc_waiting_for_auth_pnc = false;
-                }
+                hlc_waiting_for_auth_eim = false;
+                hlc_waiting_for_auth_pnc = false;
                 r_hlc[0]->call_authorization_response(types::authorization::AuthorizationStatus::Accepted,
                                                       types::authorization::CertificateStatus::NoCertificateAvailable);
                 charger->get_stopwatch().mark("Auth EIM Done");
@@ -612,7 +650,6 @@ void EvseManager::ready() {
                 if (config.enable_autocharge) {
                     p_token_provider->publish_provided_token(autocharge_token);
                 }
-                Everest::scoped_lock_timeout lock(hlc_mutex, Everest::MutexDescription::EVSE_publish_provided_token);
                 hlc_waiting_for_auth_eim = true;
                 hlc_waiting_for_auth_pnc = false;
             }
@@ -639,15 +676,9 @@ void EvseManager::ready() {
             _token.connectors.emplace(referenced_connectors);
             p_token_provider->publish_provided_token(_token);
             if (charger->get_authorized_pnc()) {
-                {
-                    Everest::scoped_lock_timeout lock(hlc_mutex,
-                                                      Everest::MutexDescription::EVSE_subscribe_require_auth_pnc);
-                    hlc_waiting_for_auth_eim = false;
-                    hlc_waiting_for_auth_pnc = false;
-                }
+                hlc_waiting_for_auth_eim = false;
+                hlc_waiting_for_auth_pnc = false;
             } else {
-                Everest::scoped_lock_timeout lock(hlc_mutex,
-                                                  Everest::MutexDescription::EVSE_subscribe_require_auth_pnc2);
                 hlc_waiting_for_auth_eim = false;
                 hlc_waiting_for_auth_pnc = true;
             }
@@ -656,7 +687,7 @@ void EvseManager::ready() {
         // Install debug V2G Messages handler if session logging is enabled
         if (config.session_logging) {
             r_hlc[0]->subscribe_v2g_messages(
-                [this](types::iso15118_charger::V2gMessages v2g_messages) { log_v2g_message(v2g_messages); });
+                [this](types::iso15118::V2gMessages v2g_messages) { log_v2g_message(v2g_messages); });
 
             r_hlc[0]->subscribe_selected_protocol(
                 [this](std::string selected_protocol) { this->selected_protocol = selected_protocol; });
@@ -673,15 +704,11 @@ void EvseManager::ready() {
 
             charger->signal_ac_with_soc_timeout.connect([this]() { switch_DC_mode(); });
 
-            r_hlc[0]->subscribe_dc_ev_status([this](types::iso15118_charger::DcEvStatus status) {
+            r_hlc[0]->subscribe_dc_ev_status([this](types::iso15118::DcEvStatus status) {
                 EVLOG_info << fmt::format("SoC received: {}.", status.dc_ev_ress_soc);
                 switch_AC_mode();
             });
         }
-
-        r_hlc[0]->subscribe_certificate_request([this](types::iso15118_charger::RequestExiStreamSchema request) {
-            p_evse->publish_iso15118_certificate_request(request);
-        });
     }
 
     bsp->signal_event.connect([this](const CPEvent event) {
@@ -712,10 +739,14 @@ void EvseManager::ready() {
             }
         }
 
+        if (not r_over_voltage_monitor.empty() and event == CPEvent::CarUnplugged) {
+            r_over_voltage_monitor[0]->call_reset_over_voltage_error();
+        }
+
         charger->process_event(event);
 
         // Forward some events to HLC
-        if (get_hlc_enabled()) {
+        if (hlc_enabled) {
             // Reset HLC auth waiting flags on new session
             if (event == CPEvent::CarPluggedIn) {
                 r_hlc[0]->call_reset_error();
@@ -723,11 +754,8 @@ void EvseManager::ready() {
                 r_hlc[0]->call_stop_charging(false);
                 latest_target_voltage = 0;
                 latest_target_current = 0;
-                {
-                    Everest::scoped_lock_timeout lock(hlc_mutex, Everest::MutexDescription::EVSE_signal_event);
-                    hlc_waiting_for_auth_eim = false;
-                    hlc_waiting_for_auth_pnc = false;
-                }
+                hlc_waiting_for_auth_eim = false;
+                hlc_waiting_for_auth_pnc = false;
             }
 
             if (event == CPEvent::PowerOn) {
@@ -755,7 +783,7 @@ void EvseManager::ready() {
             }
 
             // Inform HLC about the power meter data
-            if (get_hlc_enabled()) {
+            if (hlc_enabled) {
                 r_hlc[0]->call_update_meter_info(p);
             }
 
@@ -823,7 +851,7 @@ void EvseManager::ready() {
 
     charger->signal_max_current.connect([this](float ampere) {
         // The charger changed the max current setting. Forward to HLC
-        if (get_hlc_enabled()) {
+        if (hlc_enabled) {
             r_hlc[0]->call_update_ac_max_current(ampere);
         }
     });
@@ -832,31 +860,28 @@ void EvseManager::ready() {
     error_handling->signal_error.connect([this](bool prevents_charging) { cancel_reservation(true); });
 
     charger->signal_simple_event.connect([this](types::evse_manager::SessionEventEnum s) {
-        // Cancel reservations if charger is disabled
-        if (s == types::evse_manager::SessionEventEnum::Disabled) {
-            cancel_reservation(true);
-        }
         if (s == types::evse_manager::SessionEventEnum::SessionFinished) {
             // Reset EV information on Session start and end
             ev_info = types::evse_manager::EVInfo();
             p_evse->publish_ev_info(ev_info);
         }
 
-        std::vector<types::iso15118_charger::PaymentOption> payment_options;
+        std::vector<types::iso15118::PaymentOption> payment_options;
 
-        if (get_hlc_enabled() and s == types::evse_manager::SessionEventEnum::SessionFinished) {
+        if (hlc_enabled and s == types::evse_manager::SessionEventEnum::SessionFinished) {
             if (config.payment_enable_eim) {
-                payment_options.push_back(types::iso15118_charger::PaymentOption::ExternalPayment);
+                payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
             }
-            if (config.payment_enable_contract) {
-                payment_options.push_back(types::iso15118_charger::PaymentOption::Contract);
+            if (pnc_enabled) {
+                payment_options.push_back(types::iso15118::PaymentOption::Contract);
             }
-            if (config.payment_enable_eim == false and config.payment_enable_contract == false) {
+            if (config.payment_enable_eim == false and pnc_enabled == false) {
                 EVLOG_warning
                     << "Both payment options are disabled! ExternalPayment is nevertheless enabled in this case.";
-                payment_options.push_back(types::iso15118_charger::PaymentOption::ExternalPayment);
+                payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
             }
-            r_hlc[0]->call_session_setup(payment_options, config.payment_enable_contract);
+            r_hlc[0]->call_session_setup(payment_options, contract_certificate_installation_enabled,
+                                         central_contract_validation_allowed);
         }
     });
 
@@ -867,11 +892,23 @@ void EvseManager::ready() {
             ev_info = types::evse_manager::EVInfo();
             p_evse->publish_ev_info(ev_info);
 
-            std::vector<types::iso15118_charger::PaymentOption> payment_options;
+            std::vector<types::iso15118::PaymentOption> payment_options;
 
-            if (get_hlc_enabled() and start_reason == types::evse_manager::StartSessionReason::Authorized) {
-                payment_options.push_back(types::iso15118_charger::PaymentOption::ExternalPayment);
-                r_hlc[0]->call_session_setup(payment_options, false);
+            if (hlc_enabled) {
+                if (start_reason == types::evse_manager::StartSessionReason::Authorized) {
+                    // Session is already authorized, only use ExternalPayment in PaymentOptions
+                    payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
+                } else {
+                    // Set payment options according to configuration
+                    if (config.payment_enable_eim) {
+                        payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
+                    }
+                    if (pnc_enabled) {
+                        payment_options.push_back(types::iso15118::PaymentOption::Contract);
+                    }
+                }
+                r_hlc[0]->call_session_setup(payment_options, contract_certificate_installation_enabled,
+                                             central_contract_validation_allowed);
             }
         });
 
@@ -888,7 +925,8 @@ void EvseManager::ready() {
                        config.ac_hlc_use_5percent, config.ac_enforce_hlc, false,
                        config.soft_over_current_tolerance_percent, config.soft_over_current_measurement_noise_A,
                        config.switch_3ph1ph_delay_s, config.switch_3ph1ph_cp_state, config.soft_over_current_timeout_ms,
-                       config.state_F_after_fault_ms);
+                       config.state_F_after_fault_ms, config.fail_on_powermeter_errors, config.raise_mrec9,
+                       config.sleep_before_enabling_pwm_hlc_mode_ms);
     }
 
     telemetryThreadHandle = std::thread([this]() {
@@ -1023,18 +1061,19 @@ void EvseManager::ready() {
 }
 
 void EvseManager::ready_to_start_charging() {
+    Everest::scoped_lock_timeout lock(charger_ready_mutex, Everest::MutexDescription::EVSE_charger_ready);
+    if (charger_ready) {
+        EVLOG_warning << "Already ready to start charging!";
+        return;
+    }
+    charger_ready = true;
+
     timepoint_ready_for_charging = std::chrono::steady_clock::now();
     charger->run();
 
     // this will publish a session event Enabled or Disabled that allows other modules the retrieve this state on
     // startup
-    if (this->charger->get_current_state() == Charger::EvseState::Disabled) {
-        charger->enable_disable(
-            0, {types::evse_manager::Enable_source::Unspecified, types::evse_manager::Enable_state::Disable, 10000});
-    } else {
-        charger->enable_disable(
-            0, {types::evse_manager::Enable_source::Unspecified, types::evse_manager::Enable_state::Enable, 10000});
-    }
+    charger->enable_disable_initial_state_publish();
 
     this->p_evse->publish_ready(true);
     EVLOG_info << fmt::format(fmt::emphasis::bold | fg(fmt::terminal_color::green), "🌀🌀🌀 Ready to start charging 🌀🌀🌀");
@@ -1074,37 +1113,38 @@ void EvseManager::setup_fake_DC_mode() {
     charger->setup(config.has_ventilation, Charger::ChargeMode::DC, hlc_enabled, config.ac_hlc_use_5percent,
                    config.ac_enforce_hlc, false, config.soft_over_current_tolerance_percent,
                    config.soft_over_current_measurement_noise_A, config.switch_3ph1ph_delay_s,
-                   config.switch_3ph1ph_cp_state, config.soft_over_current_timeout_ms, config.state_F_after_fault_ms);
+                   config.switch_3ph1ph_cp_state, config.soft_over_current_timeout_ms, config.state_F_after_fault_ms,
+                   config.fail_on_powermeter_errors, config.raise_mrec9, config.sleep_before_enabling_pwm_hlc_mode_ms);
 
-    types::iso15118_charger::EVSEID evseid = {config.evse_id, config.evse_id_din};
+    types::iso15118::EVSEID evseid = {config.evse_id, config.evse_id_din};
 
     // Set up energy transfer modes for HLC. For now we only support either DC or AC, not both at the same time.
-    std::vector<types::iso15118_charger::SupportedEnergyMode> transfer_modes;
+    std::vector<types::iso15118::SupportedEnergyMode> transfer_modes;
     constexpr auto support_bidi = false;
 
-    transfer_modes.push_back({types::iso15118_charger::EnergyTransferMode::DC_core, support_bidi});
-    transfer_modes.push_back({types::iso15118_charger::EnergyTransferMode::DC_extended, support_bidi});
-    transfer_modes.push_back({types::iso15118_charger::EnergyTransferMode::DC_combo_core, support_bidi});
-    transfer_modes.push_back({types::iso15118_charger::EnergyTransferMode::DC_unique, support_bidi});
+    transfer_modes.push_back({types::iso15118::EnergyTransferMode::DC_core, support_bidi});
+    transfer_modes.push_back({types::iso15118::EnergyTransferMode::DC_extended, support_bidi});
+    transfer_modes.push_back({types::iso15118::EnergyTransferMode::DC_combo_core, support_bidi});
+    transfer_modes.push_back({types::iso15118::EnergyTransferMode::DC_unique, support_bidi});
 
-    types::iso15118_charger::DcEvsePresentVoltageCurrent present_values;
+    types::iso15118::DcEvsePresentVoltageCurrent present_values;
     present_values.evse_present_voltage = 400; // FIXME: set a correct values
     present_values.evse_present_current = 0;
 
     r_hlc[0]->call_update_dc_present_values(present_values);
 
-    types::iso15118_charger::DcEvseMaximumLimits evse_max_limits;
+    types::iso15118::DcEvseMaximumLimits evse_max_limits;
     evse_max_limits.evse_maximum_current_limit = 400;
     evse_max_limits.evse_maximum_power_limit = 200000;
     evse_max_limits.evse_maximum_voltage_limit = 1000;
     r_hlc[0]->call_update_dc_maximum_limits(evse_max_limits);
 
-    types::iso15118_charger::DcEvseMinimumLimits evse_min_limits;
+    types::iso15118::DcEvseMinimumLimits evse_min_limits;
     evse_min_limits.evse_minimum_current_limit = 0;
     evse_min_limits.evse_minimum_voltage_limit = 0;
     r_hlc[0]->call_update_dc_minimum_limits(evse_min_limits);
 
-    constexpr auto sae_mode = types::iso15118_charger::SaeJ2847BidiMode::None;
+    constexpr auto sae_mode = types::iso15118::SaeJ2847BidiMode::None;
 
     r_hlc[0]->call_setup(evseid, transfer_modes, sae_mode, config.session_logging);
 }
@@ -1113,32 +1153,33 @@ void EvseManager::setup_AC_mode() {
     charger->setup(config.has_ventilation, Charger::ChargeMode::AC, hlc_enabled, config.ac_hlc_use_5percent,
                    config.ac_enforce_hlc, true, config.soft_over_current_tolerance_percent,
                    config.soft_over_current_measurement_noise_A, config.switch_3ph1ph_delay_s,
-                   config.switch_3ph1ph_cp_state, config.soft_over_current_timeout_ms, config.state_F_after_fault_ms);
+                   config.switch_3ph1ph_cp_state, config.soft_over_current_timeout_ms, config.state_F_after_fault_ms,
+                   config.fail_on_powermeter_errors, config.raise_mrec9, config.sleep_before_enabling_pwm_hlc_mode_ms);
 
-    types::iso15118_charger::EVSEID evseid = {config.evse_id, config.evse_id_din};
+    types::iso15118::EVSEID evseid = {config.evse_id, config.evse_id_din};
 
     // Set up energy transfer modes for HLC. For now we only support either DC or AC, not both at the same time.
-    std::vector<types::iso15118_charger::SupportedEnergyMode> transfer_modes;
+    std::vector<types::iso15118::SupportedEnergyMode> transfer_modes;
     constexpr auto support_bidi = false;
 
-    transfer_modes.push_back({types::iso15118_charger::EnergyTransferMode::AC_single_phase_core, support_bidi});
+    transfer_modes.push_back({types::iso15118::EnergyTransferMode::AC_single_phase_core, support_bidi});
 
     if (get_hw_capabilities().max_phase_count_import == 3) {
-        transfer_modes.push_back({types::iso15118_charger::EnergyTransferMode::AC_three_phase_core, support_bidi});
+        transfer_modes.push_back({types::iso15118::EnergyTransferMode::AC_three_phase_core, support_bidi});
     }
 
-    types::iso15118_charger::SetupPhysicalValues setup_physical_values;
+    types::iso15118::SetupPhysicalValues setup_physical_values;
 
-    constexpr auto sae_mode = types::iso15118_charger::SaeJ2847BidiMode::None;
+    constexpr auto sae_mode = types::iso15118::SaeJ2847BidiMode::None;
 
-    if (get_hlc_enabled()) {
+    if (hlc_enabled) {
         r_hlc[0]->call_setup(evseid, transfer_modes, sae_mode, config.session_logging);
     }
 }
 
 void EvseManager::setup_v2h_mode() {
-    types::iso15118_charger::DcEvseMaximumLimits evse_max_limits;
-    types::iso15118_charger::DcEvseMinimumLimits evse_min_limits;
+    types::iso15118::DcEvseMaximumLimits evse_max_limits;
+    types::iso15118::DcEvseMinimumLimits evse_min_limits;
 
     if (powersupply_capabilities.max_import_current_A.has_value() and
         powersupply_capabilities.max_import_power_W.has_value() and
@@ -1169,14 +1210,15 @@ void EvseManager::setup_v2h_mode() {
     types::energy::ExternalLimits external_limits;
     types::energy::ScheduleReqEntry target_entry;
     target_entry.timestamp = timestamp;
-    target_entry.limits_to_leaves.total_power_W = powersupply_capabilities.max_import_power_W.value();
+    target_entry.limits_to_leaves.total_power_W = {powersupply_capabilities.max_import_power_W.value_or(0.),
+                                                   info.id + "/setup_v2h_mode"};
 
     types::energy::ScheduleReqEntry zero_entry;
     zero_entry.timestamp = timestamp;
-    zero_entry.limits_to_leaves.total_power_W = 0;
+    zero_entry.limits_to_leaves.total_power_W = {0};
 
-    external_limits.schedule_export.emplace(std::vector<types::energy::ScheduleReqEntry>(1, target_entry));
-    external_limits.schedule_import.emplace(std::vector<types::energy::ScheduleReqEntry>(1, zero_entry));
+    external_limits.schedule_export = std::vector<types::energy::ScheduleReqEntry>(1, target_entry);
+    external_limits.schedule_import = std::vector<types::energy::ScheduleReqEntry>(1, zero_entry);
 
     update_local_energy_limit(external_limits);
 }
@@ -1207,14 +1249,14 @@ bool EvseManager::update_max_watt_limit(types::energy::ExternalLimits& limits, f
     types::energy::ScheduleReqEntry e;
     e.timestamp = Everest::Date::to_rfc3339(date::utc_clock::now());
     if (max_watt >= 0) {
-        e.limits_to_leaves.total_power_W = max_watt;
+        e.limits_to_leaves.total_power_W = {max_watt, info.id + "update_max_watt_limit"};
         limits.schedule_import = std::vector<types::energy::ScheduleReqEntry>(1, e);
-        e.limits_to_leaves.total_power_W = 0;
+        e.limits_to_leaves.total_power_W = {0, info.id + "update_max_watt_limit"};
         limits.schedule_export = std::vector<types::energy::ScheduleReqEntry>(1, e);
     } else {
-        e.limits_to_leaves.total_power_W = -max_watt;
+        e.limits_to_leaves.total_power_W = {-max_watt, info.id + "update_max_watt_limit"};
         limits.schedule_export = std::vector<types::energy::ScheduleReqEntry>(1, e);
-        e.limits_to_leaves.total_power_W = 0;
+        e.limits_to_leaves.total_power_W = {0, info.id + "update_max_watt_limit"};
         limits.schedule_import = std::vector<types::energy::ScheduleReqEntry>(1, e);
     }
     return true;
@@ -1230,14 +1272,14 @@ bool EvseManager::update_max_current_limit(types::energy::ExternalLimits& limits
     e.timestamp = Everest::Date::to_rfc3339(date::utc_clock::now());
 
     if (max_current >= 0) {
-        e.limits_to_leaves.ac_max_current_A = max_current;
+        e.limits_to_leaves.ac_max_current_A = {max_current, info.id + "update_max_current_limit"};
         limits.schedule_import = std::vector<types::energy::ScheduleReqEntry>(1, e);
-        e.limits_to_leaves.ac_max_current_A = 0;
+        e.limits_to_leaves.ac_max_current_A = {0, info.id + "update_max_current_limit"};
         limits.schedule_export = std::vector<types::energy::ScheduleReqEntry>(1, e);
     } else {
-        e.limits_to_leaves.ac_max_current_A = -max_current;
+        e.limits_to_leaves.ac_max_current_A = {-max_current, info.id + "update_max_current_limit"};
         limits.schedule_export = std::vector<types::energy::ScheduleReqEntry>(1, e);
-        e.limits_to_leaves.ac_max_current_A = 0;
+        e.limits_to_leaves.ac_max_current_A = {0, info.id + "update_max_current_limit"};
         limits.schedule_import = std::vector<types::energy::ScheduleReqEntry>(1, e);
     }
 
@@ -1322,19 +1364,25 @@ bool EvseManager::is_reserved() {
     return reserved;
 }
 
-bool EvseManager::get_hlc_enabled() {
-    Everest::scoped_lock_timeout lock(hlc_mutex, Everest::MutexDescription::EVSE_get_hlc_enabled);
-    return hlc_enabled;
-}
-
 bool EvseManager::get_hlc_waiting_for_auth_pnc() {
-    Everest::scoped_lock_timeout lock(hlc_mutex, Everest::MutexDescription::EVSE_get_hlc_waiting_for_auth_pnc);
     return hlc_waiting_for_auth_pnc;
 }
 
-void EvseManager::log_v2g_message(types::iso15118_charger::V2gMessages v2g_messages) {
+void EvseManager::set_pnc_enabled(const bool value) {
+    pnc_enabled = value;
+}
 
-    const std::string msg = types::iso15118_charger::v2g_message_id_to_string(v2g_messages.id);
+void EvseManager::set_central_contract_validation_allowed(const bool value) {
+    central_contract_validation_allowed = value;
+}
+
+void EvseManager::set_contract_certificate_installation_enabled(const bool value) {
+    contract_certificate_installation_enabled = value;
+}
+
+void EvseManager::log_v2g_message(types::iso15118::V2gMessages v2g_messages) {
+
+    const std::string msg = types::iso15118::v2g_message_id_to_string(v2g_messages.id);
     const std::string xml = v2g_messages.xml.value_or("");
     const std::string json_str = v2g_messages.v2g_json.value_or("");
     const std::string exi_hex = v2g_messages.exi.value_or("");
@@ -1350,7 +1398,6 @@ void EvseManager::log_v2g_message(types::iso15118_charger::V2gMessages v2g_messa
 
 void EvseManager::charger_was_authorized() {
 
-    Everest::scoped_lock_timeout lock(hlc_mutex, Everest::MutexDescription::EVSE_charger_was_authorized);
     if (hlc_waiting_for_auth_pnc and charger->get_authorized_pnc()) {
         r_hlc[0]->call_authorization_response(types::authorization::AuthorizationStatus::Accepted,
                                               types::authorization::CertificateStatus::Accepted);
@@ -1388,6 +1435,34 @@ static double get_cable_check_voltage(double ev_max_cpd, double evse_max_cpd) {
     return cable_check_voltage;
 }
 
+double EvseManager::get_over_voltage_threshold() {
+
+    float ev_max_voltage = 500.;
+
+    if (ev_info.maximum_voltage_limit.has_value()) {
+        ev_max_voltage = ev_info.maximum_voltage_limit.value();
+    } else {
+        EVLOG_error << "OverVoltageThreshold: Did not receive EV maximum voltage, falling back to 500V";
+    }
+
+    auto evse_caps = get_powersupply_capabilities();
+
+    double negotiated_max_voltage = std::min(ev_max_voltage, evse_caps.max_export_voltage_V);
+
+    double ovp = 550.;
+
+    // IEC 61851-23 (2023) 6.3.1.106.2 Table 103
+    if (negotiated_max_voltage > 850) {
+        ovp = 1100.;
+    } else if (negotiated_max_voltage > 750) {
+        ovp = 935.;
+    } else if (negotiated_max_voltage > 500) {
+        ovp = 825.;
+    }
+
+    return ovp;
+}
+
 bool EvseManager::cable_check_should_exit() {
     return charger->get_current_state() not_eq Charger::EvseState::PrepareCharging;
 }
@@ -1395,11 +1470,11 @@ bool EvseManager::cable_check_should_exit() {
 bool EvseManager::check_isolation_resistance_in_range(double resistance) {
     if (resistance < CABLECHECK_INSULATION_FAULT_RESISTANCE_OHM) {
         session_log.evse(false, fmt::format("Isolation measurement FAULT R_F {}.", resistance));
-        r_hlc[0]->call_update_isolation_status(types::iso15118_charger::IsolationStatus::Fault);
+        r_hlc[0]->call_update_isolation_status(types::iso15118::IsolationStatus::Fault);
         return false;
     } else {
         session_log.evse(false, fmt::format("Isolation measurement Ok R_F {}.", resistance));
-        r_hlc[0]->call_update_isolation_status(types::iso15118_charger::IsolationStatus::Valid);
+        r_hlc[0]->call_update_isolation_status(types::iso15118::IsolationStatus::Valid);
     }
     return true;
 }
@@ -1409,7 +1484,7 @@ void EvseManager::cable_check() {
     if (r_imd.empty()) {
         // If no IMD is connected, we skip isolation checking.
         EVLOG_info << "No IMD: skipping cable check.";
-        r_hlc[0]->call_update_isolation_status(types::iso15118_charger::IsolationStatus::No_IMD);
+        r_hlc[0]->call_update_isolation_status(types::iso15118::IsolationStatus::No_IMD);
         r_hlc[0]->call_cable_check_finished(true);
         return;
     }
@@ -1466,7 +1541,7 @@ void EvseManager::cable_check() {
         float ev_max_voltage = 500.;
 
         if (ev_info.maximum_voltage_limit.has_value()) {
-            EVLOG_info << "EV reports " << ev_info.maximum_voltage_limit.has_value() << " V as maximum voltage";
+            EVLOG_info << "EV reports " << ev_info.maximum_voltage_limit.value() << " V as maximum voltage";
             ev_max_voltage = ev_info.maximum_voltage_limit.value();
         } else {
             EVLOG_error << "CableCheck: Did not receive EV maximum voltage, falling back to 500V";
@@ -1580,7 +1655,7 @@ void EvseManager::cable_check() {
             }
         } else {
             // If no measurements are needed after self test, report valid isolation status to ISO stack
-            r_hlc[0]->call_update_isolation_status(types::iso15118_charger::IsolationStatus::Valid);
+            r_hlc[0]->call_update_isolation_status(types::iso15118::IsolationStatus::Valid);
         }
 
         // We are done with the isolation measurement and can now report success to the EV,
@@ -1751,7 +1826,7 @@ bool EvseManager::wait_powersupply_DC_voltage_reached(double target_voltage) {
             powersupply_DC_off();
             r_hlc[0]->call_cable_check_finished(false);
             charger->set_hlc_error();
-            r_hlc[0]->call_send_error(types::iso15118_charger::EvseError::Error_EmergencyShutdown);
+            r_hlc[0]->call_send_error(types::iso15118::EvseError::Error_EmergencyShutdown);
             break;
         }
         types::power_supply_DC::VoltageCurrent m;
@@ -1782,7 +1857,7 @@ bool EvseManager::wait_powersupply_DC_below_voltage(double target_voltage) {
             powersupply_DC_off();
             r_hlc[0]->call_cable_check_finished(false);
             charger->set_hlc_error();
-            r_hlc[0]->call_send_error(types::iso15118_charger::EvseError::Error_EmergencyShutdown);
+            r_hlc[0]->call_send_error(types::iso15118::EvseError::Error_EmergencyShutdown);
             break;
         }
         types::power_supply_DC::VoltageCurrent m;
@@ -1829,8 +1904,7 @@ types::energy::ExternalLimits EvseManager::get_local_energy_limits() {
     std::scoped_lock lock(external_local_limits_mutex);
 
     // external limits are empty
-    if (not external_local_energy_limits.schedule_import.has_value() and
-        not external_local_energy_limits.schedule_export.has_value()) {
+    if (external_local_energy_limits.schedule_import.empty() and external_local_energy_limits.schedule_export.empty()) {
         if (config.charge_mode == "AC") {
             // by default we import energy
             update_max_current_limit(active_local_limits, get_hw_capabilities().max_current_A_import);
@@ -1856,7 +1930,7 @@ void EvseManager::fail_cable_check() {
         r_hlc[0]->call_cable_check_finished(false);
     }
     charger->set_hlc_error();
-    r_hlc[0]->call_send_error(types::iso15118_charger::EvseError::Error_EmergencyShutdown);
+    r_hlc[0]->call_send_error(types::iso15118::EvseError::Error_EmergencyShutdown);
 }
 
 types::evse_manager::EVInfo EvseManager::get_ev_info() {

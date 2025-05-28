@@ -29,13 +29,17 @@
 #include <generated/interfaces/evse_manager/Implementation.hpp>
 #include <generated/interfaces/evse_manager/Interface.hpp>
 #include <generated/interfaces/isolation_monitor/Interface.hpp>
+#include <generated/interfaces/over_voltage_monitor/Interface.hpp>
 #include <generated/interfaces/power_supply_DC/Interface.hpp>
+#include <generated/interfaces/powermeter/Interface.hpp>
 #include <sigslot/signal.hpp>
 
 #include "Timeout.hpp"
 #include "utils/thread.hpp"
 
 namespace module {
+
+class EvseManager;
 
 class ErrorHandling {
 
@@ -47,7 +51,10 @@ public:
                            const std::vector<std::unique_ptr<ac_rcdIntf>>& r_ac_rcd,
                            const std::unique_ptr<evse_managerImplBase>& _p_evse,
                            const std::vector<std::unique_ptr<isolation_monitorIntf>>& _r_imd,
-                           const std::vector<std::unique_ptr<power_supply_DCIntf>>& _r_powersupply);
+                           const std::vector<std::unique_ptr<power_supply_DCIntf>>& _r_powersupply,
+                           const std::vector<std::unique_ptr<powermeterIntf>>& _r_powermeter,
+                           const std::vector<std::unique_ptr<over_voltage_monitorIntf>>& _r_over_voltage_monitor,
+                           bool _inoperative_error_use_vendor_id);
 
     // Signal that error set has changed. Bool argument is true if it is preventing charging at the moment and false if
     // charging can continue.
@@ -61,14 +68,19 @@ public:
     void raise_internal_error(const std::string& description);
     void clear_internal_error();
 
+    void raise_authorization_timeout_error(const std::string& description);
+    void clear_authorization_timeout_error();
+
     void raise_powermeter_transaction_start_failed_error(const std::string& description);
     void clear_powermeter_transaction_start_failed_error();
 
+protected:
+    void raise_inoperative_error(const Everest::error::Error& caused_by);
+
 private:
     void process_error();
-    void raise_inoperative_error(const std::string& caused_by);
     void clear_inoperative_error();
-    std::optional<std::string> errors_prevent_charging();
+    std::optional<Everest::error::Error> errors_prevent_charging();
 
     const std::unique_ptr<evse_board_supportIntf>& r_bsp;
     const std::vector<std::unique_ptr<ISO15118_chargerIntf>>& r_hlc;
@@ -77,6 +89,9 @@ private:
     const std::unique_ptr<evse_managerImplBase>& p_evse;
     const std::vector<std::unique_ptr<isolation_monitorIntf>>& r_imd;
     const std::vector<std::unique_ptr<power_supply_DCIntf>>& r_powersupply;
+    const std::vector<std::unique_ptr<powermeterIntf>>& r_powermeter;
+    const std::vector<std::unique_ptr<over_voltage_monitorIntf>>& r_over_voltage_monitor;
+    const bool inoperative_error_use_vendor_id;
 };
 
 } // namespace module

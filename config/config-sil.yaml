@@ -126,7 +126,6 @@ active_modules:
       device: auto
       tls_security: allow
       supported_DIN70121: false
-    connections: {}
     module: EvseV2G
     connections:
       security:
@@ -177,7 +176,7 @@ active_modules:
     config_module:
       connector_id: 1
     connections: {}
-    module: JsYetiSimulator
+    module: YetiSimulator
     telemetry:
       id: 1
 'x-module-layout':

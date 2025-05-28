@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 import asyncio
+from unittest.mock import ANY
+import getpass
+import pytest
 
 from everest.testing.core_utils.controller.test_controller_interface import (
     TestController,
@@ -22,9 +25,10 @@ from validations import (
     validate_boot_notification
 )
 
-from everest.testing.ocpp_utils.fixtures import *
+from everest.testing.ocpp_utils.fixtures import charge_point_v16, central_system_v16, ftp_server
 from everest.testing.ocpp_utils.charge_point_v16 import ChargePoint16
-from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, TestUtility, ValidationMode
+from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, wait_for_and_validate_next_message_only_with_specific_action, TestUtility, ValidationMode
+from everest.testing.ocpp_utils.central_system import CentralSystem
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP16ConfigAdjustment
 from everest_test_utils import *
 # fmt: on
@@ -144,7 +148,7 @@ async def test_cold_boot_pending(
     @on(Action.BootNotification)
     def on_boot_notification_pending(**kwargs):
         return call_result.BootNotificationPayload(
-            current_time=datetime.utcnow().isoformat(),
+            current_time=datetime.now(timezone.utc).isoformat(),
             interval=10,
             status=RegistrationStatus.pending,
         )
@@ -152,7 +156,7 @@ async def test_cold_boot_pending(
     @on(Action.BootNotification)
     def on_boot_notification_accepted(**kwargs):
         return call_result.BootNotificationPayload(
-            current_time=datetime.utcnow().isoformat(),
+            current_time=datetime.now(timezone.utc).isoformat(),
             interval=5,
             status=RegistrationStatus.accepted,
         )
@@ -631,6 +635,118 @@ async def test_stop_transaction_parent_id_tag(
 
 
 @pytest.mark.asyncio
+async def test_stop_transaction_parent_id_tag_in_start_transaction(
+    test_config: OcppTestConfiguration,
+    charge_point_v16: ChargePoint16,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+
+    logging.info(
+        "######### test_stop_transaction_parent_id_tag_in_start_transaction #########")
+
+    # StartTransaction.conf with parent id
+    @on(Action.StartTransaction)
+    def on_start_transaction(**kwargs):
+        id_tag_info = IdTagInfo(
+            status=AuthorizationStatus.accepted,
+            parent_id_tag=test_config.authorization_info.parent_id_tag,
+        )
+        return call_result.StartTransactionPayload(
+            transaction_id=1, id_tag_info=id_tag_info
+        )
+
+    setattr(charge_point_v16, "on_start_transaction", on_start_transaction)
+    charge_point_v16.route_map = create_route_map(charge_point_v16)
+
+    # start charging session
+    test_controller.plug_in()
+
+    # expect StatusNotification with status preparing
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        call.StatusNotificationPayload(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.preparing
+        ),
+    )
+
+    # swipe id tag to authorize
+    test_controller.swipe(test_config.authorization_info.valid_id_tag_1)
+
+    # expect authorize.req
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "Authorize",
+        call.AuthorizePayload(test_config.authorization_info.valid_id_tag_1),
+    )
+
+    # expect StartTransaction.req
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StartTransaction",
+        call.StartTransactionPayload(
+            1, test_config.authorization_info.valid_id_tag_1, 0, ""
+        ),
+        validate_standard_start_transaction,
+    )
+
+    # expect StatusNotification with status charging
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        call.StatusNotificationPayload(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.charging
+        ),
+    )
+    # authorize.conf with parent id tag
+
+    @on(Action.Authorize)
+    def on_authorize(**kwargs):
+        id_tag_info = IdTagInfo(
+            status=AuthorizationStatus.accepted,
+            parent_id_tag=test_config.authorization_info.parent_id_tag,
+        )
+        return call_result.AuthorizePayload(id_tag_info=id_tag_info)
+    setattr(charge_point_v16, "on_authorize", on_authorize)
+    charge_point_v16.route_map = create_route_map(charge_point_v16)
+
+    # swipe other id tag to authorize (same parent id)
+    test_controller.swipe(test_config.authorization_info.valid_id_tag_2)
+
+    # expect authorize.req
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "Authorize",
+        call.AuthorizePayload(test_config.authorization_info.valid_id_tag_2),
+    )
+
+    # expect StatusNotification with status finishing
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        call.StatusNotificationPayload(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.finishing
+        ),
+    )
+
+    # expect StopTransaction.req
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StopTransaction",
+        call.StopTransactionPayload(0, "", 1, Reason.local),
+        validate_standard_stop_transaction,
+    )
+
+
+@pytest.mark.asyncio
 async def test_005_1_ev_side_disconnect(
     test_config: OcppTestConfiguration,
     charge_point_v16: ChargePoint16,
@@ -706,16 +822,6 @@ async def test_005_1_ev_side_disconnect(
     test_controller.plug_out()
 
     test_utility.messages.clear()
-
-    # expect StatusNotification with status finishing
-    assert await wait_for_and_validate(
-        test_utility,
-        charge_point_v16,
-        "StatusNotification",
-        call.StatusNotificationPayload(
-            1, ChargePointErrorCode.no_error, ChargePointStatus.finishing
-        ),
-    )
 
     # expect StopTransaction.req
     assert await wait_for_and_validate(
@@ -813,16 +919,6 @@ async def test_ev_side_disconnect(
     test_utility.messages.clear()
 
     test_controller.plug_out()
-
-    # expect StatusNotification with status finishing
-    assert await wait_for_and_validate(
-        test_utility,
-        charge_point_v16,
-        "StatusNotification",
-        call.StatusNotificationPayload(
-            1, ChargePointErrorCode.no_error, ChargePointStatus.finishing
-        ),
-    )
 
     # expect StopTransaction.req
     assert await wait_for_and_validate(
@@ -1253,7 +1349,7 @@ async def test_regular_charge_session_cached_id(
         charge_point_v16,
         "StartTransaction",
         call.StartTransactionPayload(
-            1, test_config.authorization_info.valid_id_tag_1, 0, ""
+            1, test_config.authorization_info.valid_id_tag_1, ANY, ""
         ),
         validate_standard_start_transaction,
     )
@@ -1286,7 +1382,7 @@ async def test_regular_charge_session_cached_id(
         test_utility,
         charge_point_v16,
         "StopTransaction",
-        call.StopTransactionPayload(0, "", 1, Reason.remote),
+        call.StopTransactionPayload(ANY, "", 1, Reason.remote),
         validate_standard_stop_transaction,
     )
 
@@ -2015,9 +2111,10 @@ async def test_unlock_connector_no_charging_no_fixed_cable(
         call_result.UnlockConnectorPayload(UnlockStatus.unlocked),
     )
 
-
+@pytest.mark.everest_core_config(
+    get_everest_config_path_str("everest-config-two-connectors.yaml") # this config has no connector_lock configured
+)
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="EVerest SIL currently does not support this")
 async def test_unlock_connector_no_charging_fixed_cable(
     charge_point_v16: ChargePoint16, test_utility: TestUtility
 ):
@@ -2121,8 +2218,10 @@ async def test_unlock_connector_with_charging_session_no_fixed_cable(
     )
 
 
+@pytest.mark.everest_core_config(
+    get_everest_config_path_str("everest-config-two-connectors.yaml") # this config has no connector_lock configured
+)
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="EVerest SIL currently does not support this")
 async def test_unlock_connector_with_charging_session_fixed_cable(
     test_config: OcppTestConfiguration,
     charge_point_v16: ChargePoint16,
@@ -2257,6 +2356,10 @@ async def test_set_configuration(
     assert response.configuration_key[0]["value"] == "15"
 
 
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP16ConfigAdjustment(
+        [("Core", "MeterValuesSampledData", "Energy.Active.Import.Register,SoC,Current.Offered,Power.Offered")])
+)
 @pytest.mark.asyncio
 async def test_sampled_meter_values(
     test_config: OcppTestConfiguration,
@@ -2291,7 +2394,7 @@ async def test_sampled_meter_values(
                 {
                     "key": "MeterValuesSampledData",
                     "readonly": False,
-                    "value": "Energy.Active.Import.Register",
+                    "value": "Energy.Active.Import.Register,SoC,Current.Offered,Power.Offered",
                 }
             ]
         ),
@@ -4154,13 +4257,13 @@ async def test_start_charging_id_in_authorization_list(
 
 @pytest.mark.asyncio
 @pytest.mark.xdist_group(name="FTP")
-async def test_firwmare_update_donwload_install(
+async def test_firmware_update_download_install(
     charge_point_v16: ChargePoint16, test_utility: TestUtility, ftp_server, test_config
 ):
     # not supported when implemented security extensions
-    logging.info("######### test_firwmare_update_donwload_install #########")
+    logging.info("######### test_firmware_update_download_install #########")
 
-    retrieve_date = datetime.utcnow()
+    retrieve_date = datetime.now(timezone.utc)
     location = f"ftp://{getpass.getuser()}:12345@localhost:{ftp_server.port}/firmware_update.pnx"
 
     await charge_point_v16.update_firmware_req(
@@ -4231,7 +4334,7 @@ async def test_get_diagnostics(
     await asyncio.sleep(1)
 
     location = f"ftp://{getpass.getuser()}:12345@localhost:{ftp_server.port}"
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
     stop_time = start_time + timedelta(days=3)
 
     await charge_point_v16.get_diagnostics_req(
@@ -4264,7 +4367,7 @@ async def test_get_diagnostics_upload_fail(
     logging.info("######### test_get_diagnostics_upload_fail #########")
 
     location = "ftp://pionix:12345@notavalidftpserver:21"
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
     stop_time = start_time + timedelta(days=3)
     retries = 0
 
@@ -4331,7 +4434,7 @@ async def test_reservation_local_start_tx(
     test_controller.swipe(test_config.authorization_info.valid_id_tag_1)
 
     # expect StatusNotification with status preparing
-    assert await wait_for_and_validate(
+    assert await wait_for_and_validate_next_message_only_with_specific_action(
         test_utility,
         charge_point_v16,
         "StatusNotification",
@@ -4412,6 +4515,16 @@ async def test_reservation_remote_start_tx(
         validate_remote_start_stop_transaction,
     )
 
+    # expect StatusNotification with status preparing
+    assert await wait_for_and_validate_next_message_only_with_specific_action(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        call.StatusNotificationPayload(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.preparing
+        ),
+    )
+
     # start charging session
     test_controller.plug_in()
 
@@ -4448,7 +4561,7 @@ async def test_reservation_connector_expire(
 
     await charge_point_v16.get_configuration_req(key=["AuthorizeRemoteTxRequests"])
 
-    t = datetime.utcnow() + timedelta(seconds=10)
+    t = datetime.now(timezone.utc) + timedelta(seconds=10)
 
     await charge_point_v16.reserve_now_req(
         connector_id=1,
@@ -4539,7 +4652,7 @@ async def test_reservation_connector_faulted(
 
     await asyncio.sleep(10)
 
-    t = datetime.utcnow() + timedelta(seconds=10)
+    t = datetime.now(timezone.utc) + timedelta(seconds=10)
 
     await charge_point_v16.reserve_now_req(
         connector_id=1,
@@ -4579,7 +4692,7 @@ async def test_reservation_connector_occupied(
         ),
     )
 
-    t = datetime.utcnow() + timedelta(seconds=10)
+    t = datetime.now(timezone.utc) + timedelta(seconds=10)
 
     await asyncio.sleep(2)
 
@@ -4611,7 +4724,7 @@ async def test_reservation_connector_unavailable(
         connector_id=1, type=AvailabilityType.inoperative
     )
 
-    t = datetime.utcnow() + timedelta(seconds=10)
+    t = datetime.now(timezone.utc) + timedelta(seconds=10)
 
     await charge_point_v16.reserve_now_req(
         connector_id=1,
@@ -4640,7 +4753,7 @@ async def test_reservation_connector_rejected(
 ):
     logging.info("######### test_reservation_connector_rejected #########")
 
-    t = datetime.utcnow() + timedelta(seconds=10)
+    t = datetime.now(timezone.utc) + timedelta(seconds=10)
 
     await charge_point_v16.reserve_now_req(
         connector_id=1,
@@ -4669,7 +4782,7 @@ async def test_reservation_connector_zero_not_supported(
 
     await charge_point_v16.reserve_now_req(
         connector_id=0,
-        expiry_date=(datetime.utcnow() + timedelta(minutes=10)).isoformat(),
+        expiry_date=(datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
         id_tag=test_config.authorization_info.valid_id_tag_1,
         reservation_id=0,
     )
@@ -4697,7 +4810,7 @@ async def test_reservation_connector_zero_supported(
 
     await charge_point_v16.reserve_now_req(
         connector_id=0,
-        expiry_date=(datetime.utcnow() + timedelta(minutes=10)).isoformat(),
+        expiry_date=(datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
         id_tag=test_config.authorization_info.valid_id_tag_1,
         reservation_id=0,
     )
@@ -4724,7 +4837,7 @@ async def test_reservation_connector_zero_supported(
     test_controller.swipe(test_config.authorization_info.valid_id_tag_1)
 
     # expect StatusNotification with status preparing
-    assert await wait_for_and_validate(
+    assert await wait_for_and_validate_next_message_only_with_specific_action(
         test_utility,
         charge_point_v16,
         "StatusNotification",
@@ -4782,7 +4895,7 @@ async def test_reservation_faulted_state(
     )
     await charge_point_v16.reserve_now_req(
         connector_id=1,
-        expiry_date=datetime.utcnow().isoformat(),
+        expiry_date=datetime.now(timezone.utc).isoformat(),
         id_tag=test_config.authorization_info.valid_id_tag_1,
         reservation_id=0,
     )
@@ -4821,7 +4934,7 @@ async def test_reservation_occupied_state(
     )
     await charge_point_v16.reserve_now_req(
         connector_id=1,
-        expiry_date=(datetime.utcnow() + timedelta(minutes=10)).isoformat(),
+        expiry_date=(datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
         id_tag=test_config.authorization_info.valid_id_tag_1,
         reservation_id=0,
     )
@@ -4846,7 +4959,7 @@ async def test_reservation_cancel(
 
     await charge_point_v16.get_configuration_req(key=["AuthorizeRemoteTxRequests"])
 
-    t = datetime.utcnow() + timedelta(minutes=10)
+    t = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     await charge_point_v16.reserve_now_req(
         connector_id=1,
@@ -4938,7 +5051,7 @@ async def test_reservation_cancel_rejected(
 ):
     logging.info("######### test_reservation_cancel_rejected #########")
 
-    t = datetime.utcnow() + timedelta(minutes=10)
+    t = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     await charge_point_v16.reserve_now_req(
         connector_id=1,
@@ -5001,7 +5114,7 @@ async def test_reservation_with_parentid(
         key="AuthorizeRemoteTxRequests", value="true"
     )
 
-    t = datetime.utcnow() + timedelta(minutes=10)
+    t = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     await charge_point_v16.reserve_now_req(
         connector_id=1,
@@ -5234,7 +5347,7 @@ async def test_central_charging_tx_default_profile(
 
     await charge_point_v16.get_configuration_req(key=["AuthorizeRemoteTxRequests"])
 
-    valid_from = datetime.utcnow()
+    valid_from = datetime.now(timezone.utc)
     valid_to = valid_from + timedelta(days=3)
 
     set_charging_profile_req = call.SetChargingProfilePayload(
@@ -5307,7 +5420,7 @@ async def test_central_charging_tx_default_profile(
 
     cs = await charge_point_v16.get_composite_schedule_req(connector_id=1, duration=300)
 
-    passed_seconds = int((datetime.utcnow() - valid_from).total_seconds())
+    passed_seconds = int((datetime.now(timezone.utc) - valid_from).total_seconds())
 
     exp_get_composite_schedule_response = call_result.GetCompositeSchedulePayload(
         status=GetCompositeScheduleStatus.accepted,
@@ -5383,7 +5496,7 @@ async def test_central_charging_tx_profile(
         ),
     )
 
-    valid_from = datetime.utcnow()
+    valid_from = datetime.now(timezone.utc)
     valid_to = valid_from + timedelta(days=3)
 
     set_charging_profile_req = call.SetChargingProfilePayload(
@@ -5421,7 +5534,7 @@ async def test_central_charging_tx_profile(
 
     await charge_point_v16.get_composite_schedule_req(connector_id=1, duration=300)
 
-    passed_seconds = int((datetime.utcnow() - valid_from).total_seconds())
+    passed_seconds = int((datetime.now(timezone.utc) - valid_from).total_seconds())
 
     exp_get_composite_schedule_response = call_result.GetCompositeSchedulePayload(
         status=GetCompositeScheduleStatus.accepted,
@@ -5458,7 +5571,7 @@ async def test_central_charging_no_transaction(
 
     await charge_point_v16.get_configuration_req(key=["AuthorizeRemoteTxRequests"])
 
-    valid_from = datetime.utcnow()
+    valid_from = datetime.now(timezone.utc)
     valid_to = valid_from + timedelta(days=3)
 
     set_charging_profile_req = call.SetChargingProfilePayload(
@@ -5542,7 +5655,7 @@ async def test_central_charging_wrong_tx_id(
         ),
     )
 
-    valid_from = datetime.utcnow()
+    valid_from = datetime.now(timezone.utc)
     valid_to = valid_from + timedelta(days=3)
 
     set_charging_profile_req = call.SetChargingProfilePayload(
@@ -5628,7 +5741,7 @@ async def test_central_charging_tx_default_profile_ongoing_transaction(
         ),
     )
 
-    valid_from = datetime.utcnow()
+    valid_from = datetime.now(timezone.utc)
     valid_to = valid_from + timedelta(days=3)
 
     set_charging_profile_req = call.SetChargingProfilePayload(
@@ -5738,7 +5851,7 @@ async def test_get_composite_schedule(
         ),
     )
 
-    valid_from = datetime.utcnow()
+    valid_from = datetime.now(timezone.utc)
     valid_to = valid_from + timedelta(days=3)
 
     set_charging_profile_req_1 = call.SetChargingProfilePayload(
@@ -5919,7 +6032,7 @@ async def test_clear_charging_profile(
         ),
     )
 
-    valid_from = datetime.utcnow()
+    valid_from = datetime.now(timezone.utc)
     valid_to = valid_from + timedelta(days=3)
 
     set_charging_profile_req = call.SetChargingProfilePayload(
@@ -5998,7 +6111,7 @@ async def test_stacking_charging_profiles(
     await charge_point_v16.get_configuration_req(key=["MaxChargingProfilesInstalled"])
     await charge_point_v16.get_configuration_req(key=["ChargeProfileMaxStackLevel"])
 
-    valid_from = datetime.utcnow()
+    valid_from = datetime.now(timezone.utc)
     valid_to = valid_from + timedelta(days=3)
 
     set_charging_profile_req_1 = call.SetChargingProfilePayload(
@@ -6093,7 +6206,7 @@ async def test_stacking_charging_profiles(
 
     cs = await charge_point_v16.get_composite_schedule_req(connector_id=1, duration=350)
 
-    passed_seconds = int((datetime.utcnow() - valid_from).total_seconds())
+    passed_seconds = int((datetime.now(timezone.utc) - valid_from).total_seconds())
 
     exp_get_composite_schedule_response = call_result.GetCompositeSchedulePayload(
         status=GetCompositeScheduleStatus.accepted,
@@ -6136,7 +6249,7 @@ async def test_remote_start_tx_with_profile(
     # start charging session
     test_controller.plug_in()
 
-    valid_from = datetime.utcnow()
+    valid_from = datetime.now(timezone.utc)
     valid_to = valid_from + timedelta(days=3)
 
     cs_charging_profiles = ChargingProfile(
@@ -6198,7 +6311,7 @@ async def test_remote_start_tx_with_profile_rejected(
 ):
     logging.info("######### test_remote_start_tx_with_profile_rejected #########")
 
-    valid_from = datetime.utcnow()
+    valid_from = datetime.now(timezone.utc)
     valid_to = valid_from + timedelta(days=3)
 
     cs_charging_profiles = ChargingProfile(
@@ -6626,7 +6739,7 @@ async def test_get_security_log(
 ):
     logging.info("######### test_get_security_log #########")
 
-    oldest_timestamp = datetime.utcnow()
+    oldest_timestamp = datetime.now(timezone.utc)
     latest_timestamp = oldest_timestamp + timedelta(days=3)
 
     log = {
@@ -6682,7 +6795,7 @@ async def test_signed_update_firmware(
     )
 
     location = f"ftp://{getpass.getuser()}:12345@localhost:{ftp_server.port}/firmware_update.pnx"
-    retrieve_date_time = datetime.utcnow()
+    retrieve_date_time = datetime.now(timezone.utc)
     mf_root_ca = open(test_config.certificate_info.mf_root_ca).read()
     fw_signature = open(test_config.firmware_info.update_file_signature).read()
 
