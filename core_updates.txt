@@ -1,0 +1,1966 @@
+diff --git a/config/config-sil-ocpp201-pnc.yaml b/config/config-sil-ocpp201-pnc.yaml
+index 631b72c1..094b5bf1 100644
+--- a/config/config-sil-ocpp201-pnc.yaml
++++ b/config/config-sil-ocpp201-pnc.yaml
+@@ -15,12 +15,9 @@ active_modules:
+       device: auto
+       supported_ISO15118_2: true
+       tls_active: true
+-      is_cert_install_needed: true
++      is_cert_install_needed: false
+   evse_manager_1:
+     module: EvseManager
+-    mapping:
+-      module:
+-        evse: 1
+     config_module:
+       connector_id: 1
+       evse_id: "DE*PNX*00001"
+@@ -30,6 +27,7 @@ active_modules:
+       ac_hlc_enabled: true
+       ac_hlc_use_5percent: false
+       ac_enforce_hlc: false
++      max_current_import_A: 16
+     connections:
+       bsp:
+         - module_id: yeti_driver_1
+@@ -43,33 +41,6 @@ active_modules:
+       hlc:
+         - module_id: iso15118_charger
+           implementation_id: charger
+-  evse_manager_2:
+-    module: EvseManager
+-    mapping:
+-      module:
+-        evse: 2
+-    config_module:
+-      connector_id: 2
+-      evse_id: "2"
+-      session_logging: true
+-      session_logging_xml: false
+-      session_logging_path: /tmp
+-      ac_hlc_enabled: false
+-      ac_hlc_use_5percent: false
+-      ac_enforce_hlc: false
+-    connections:
+-      bsp:
+-        - module_id: yeti_driver_2
+-          implementation_id: board_support
+-      powermeter_grid_side:
+-        - module_id: yeti_driver_2
+-          implementation_id: powermeter
+-      slac:
+-        - module_id: slac
+-          implementation_id: evse
+-      hlc:
+-        - module_id: iso15118_charger
+-          implementation_id: charger
+   yeti_driver_1:
+     module: YetiSimulator
+     mapping:
+@@ -77,22 +48,16 @@ active_modules:
+         evse: 1
+     config_module:
+       connector_id: 1
+-  yeti_driver_2:
+-    module: YetiSimulator
+-    mapping:
+-      module:
+-        evse: 2
+-    config_module:
+-      connector_id: 2
+   slac:
+     module: SlacSimulator
+-  ev_manager_1:
++  car_simulator_1:
+     module: EvManager
+     config_module:
+       connector_id: 1
+       auto_enable: true
+       auto_exec: false
+       auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
++      three_phases: false
+     connections:
+       ev_board_support:
+         - module_id: yeti_driver_1
+@@ -103,30 +68,12 @@ active_modules:
+       slac:
+         - module_id: slac
+           implementation_id: ev
+-  ev_manager_2:
+-    module: EvManager
+-    config_module:
+-      connector_id: 2
+-      auto_enable: true
+-      auto_exec: false
+-    connections:
+-      ev_board_support:
+-        - module_id: yeti_driver_2
+-          implementation_id: ev_board_support
+-      ev:
+-        - module_id: iso15118_car
+-          implementation_id: ev
+-      slac:
+-        - module_id: slac
+-          implementation_id: ev
+   ocpp:
+     module: OCPP201
+     connections:
+       evse_manager:
+         - module_id: evse_manager_1
+           implementation_id: evse
+-        - module_id: evse_manager_2
+-          implementation_id: evse
+       auth:
+         - module_id: auth
+           implementation_id: main
+@@ -141,8 +88,6 @@ active_modules:
+           implementation_id: external_limits
+         - module_id: evse_manager_1_ocpp_sink
+           implementation_id: external_limits
+-        - module_id: evse_manager_2_ocpp_sink
+-          implementation_id: external_limits
+       reservation:
+         - module_id: auth
+           implementation_id: reservation
+@@ -168,16 +113,12 @@ active_modules:
+           implementation_id: auth_provider
+         - module_id: evse_manager_1
+           implementation_id: token_provider
+-        - module_id: evse_manager_2
+-          implementation_id: token_provider
+       token_validator:
+         - module_id: ocpp
+           implementation_id: auth_validator
+       evse_manager:
+         - module_id: evse_manager_1
+           implementation_id: evse
+-        - module_id: evse_manager_2
+-          implementation_id: evse
+   energy_manager:
+     module: EnergyManager
+     connections:
+@@ -196,18 +137,6 @@ active_modules:
+       energy_consumer:
+         - module_id: evse_manager_1
+           implementation_id: energy_grid
+-  evse_manager_2_ocpp_sink:
+-    module: EnergyNode
+-    mapping:
+-      module:
+-        evse: 2
+-    config_module:
+-      fuse_limit_A: 32.0
+-      phase_count: 3
+-    connections:
+-      energy_consumer:
+-        - module_id: evse_manager_2
+-          implementation_id: energy_grid
+   evse_manager_1_api_sink:
+     module: EnergyNode
+     mapping:
+@@ -223,21 +152,6 @@ active_modules:
+       powermeter:
+         - module_id: yeti_driver_1
+           implementation_id: powermeter
+-  evse_manager_2_api_sink:
+-    module: EnergyNode
+-    mapping:
+-      module:
+-        evse: 2
+-    config_module:
+-      fuse_limit_A: 32.0
+-      phase_count: 3
+-    connections:
+-      energy_consumer:
+-        - module_id: evse_manager_2_ocpp_sink
+-          implementation_id: energy_grid
+-      powermeter:
+-        - module_id: yeti_driver_2
+-          implementation_id: powermeter
+   grid_connection_point:
+     module: EnergyNode
+     mapping:
+@@ -251,16 +165,12 @@ active_modules:
+       energy_consumer:
+         - module_id: evse_manager_1_api_sink
+           implementation_id: energy_grid
+-        - module_id: evse_manager_2_api_sink
+-          implementation_id: energy_grid
+   api:
+     module: API
+     connections:
+       evse_manager:
+         - module_id: evse_manager_1
+           implementation_id: evse
+-        - module_id: evse_manager_2
+-          implementation_id: evse
+       ocpp:
+         - module_id: ocpp
+           implementation_id: ocpp_generic
+@@ -270,8 +180,6 @@ active_modules:
+       evse_energy_sink:
+         - module_id: evse_manager_1_api_sink
+           implementation_id: external_limits
+-        - module_id: evse_manager_2_api_sink
+-          implementation_id: external_limits
+   error_history:
+     module: ErrorHistory
+     config_implementation:
+diff --git a/interfaces/ISO15118_ev.yaml b/interfaces/ISO15118_ev.yaml
+index 1e8e0168..8b95e183 100644
+--- a/interfaces/ISO15118_ev.yaml
++++ b/interfaces/ISO15118_ev.yaml
+@@ -9,6 +9,16 @@ cmds:
+           by the EVCC
+         type: string
+         $ref: /iso15118#/EnergyTransferMode
++      DepartureTime:
++        description: >-
++          The time when the EVCC wants to leave the charging station (in seconds)
++          (optional)
++        type: number
++      EAmount:
++        description: >-
++          The amount of energy that the EVCC wants to charge (in kWh)
++          (optional)
++        type: number
+     result:
+       description: Returns true if the evcc simulation started
+       type: boolean
+diff --git a/modules/API/API.cpp b/modules/API/API.cpp
+index 2f01f7c5..9c3dd5e5 100644
+--- a/modules/API/API.cpp
++++ b/modules/API/API.cpp
+@@ -681,6 +681,7 @@ void API::init() {
+     if (this->r_ocpp.size() == 1) {
+ 
+         this->r_ocpp.at(0)->subscribe_is_connected([this](bool is_connected) {
++	    EVLOG_info << "Received OCPP connection status callback with is_connected: " << is_connected;
+             std::scoped_lock lock(ocpp_data_mutex);
+             if (is_connected) {
+                 this->ocpp_connection_status = "connected";
+@@ -690,6 +691,7 @@ void API::init() {
+         });
+ 
+         this->r_ocpp.at(0)->subscribe_charging_schedules([this, &var_ocpp_schedule](json schedule) {
++	    EVLOG_info << "Received OCPP charging schedule update: " << schedule;
+             std::scoped_lock lock(ocpp_data_mutex);
+             this->ocpp_charging_schedule = schedule;
+             this->ocpp_charging_schedule_updated = true;
+diff --git a/modules/EvManager/EvManager.hpp b/modules/EvManager/EvManager.hpp
+index 41c6dc87..8a09ad9f 100644
+--- a/modules/EvManager/EvManager.hpp
++++ b/modules/EvManager/EvManager.hpp
+@@ -44,6 +44,8 @@ struct Conf {
+     int dc_discharge_v2g_minimal_soc;
+     double max_current;
+     bool three_phases;
++    int e_amount;
++    int departure_time;
+ };
+ 
+ class EvManager : public Everest::ModuleBase {
+diff --git a/modules/EvManager/main/car_simulation.cpp b/modules/EvManager/main/car_simulation.cpp
+index 0f1593d4..d3b85172 100644
+--- a/modules/EvManager/main/car_simulation.cpp
++++ b/modules/EvManager/main/car_simulation.cpp
+@@ -206,16 +206,25 @@ bool CarSimulation::iso_dc_power_on(const CmdArguments& arguments) {
+ }
+ 
+ bool CarSimulation::iso_start_v2g_session(const CmdArguments& arguments, bool three_phases) {
++    //add departure time and eamount to arguments
++    //if have to provide but don't want to, use -1 as a flag to get default from config
+     const auto& energy_mode = arguments[0];
++    // convert the departure time to an int
++    // std::string departure_time = std::to_string(std::stoi(arguments[1]));
++    const auto& departure_time = std::stoi(arguments[1]);
++    const auto& e_amount = std::stoi(arguments[2]);
++
++
++    EVLOG_debug << "energy mode: " << energy_mode << " departure time: " << departure_time << " eamount: " << e_amount << " three phases: " << three_phases;
+ 
+     if (energy_mode == constants::AC) {
+         if (three_phases == false) {
+-            r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_single_phase_core);
++            r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_single_phase_core, departure_time, e_amount);
+         } else {
+-            r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_three_phase_core);
++            r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_three_phase_core, departure_time, e_amount);
+         }
+     } else if (energy_mode == constants::DC) {
+-        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::DC_extended);
++        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::DC_extended, departure_time, e_amount);
+     } else {
+         return false;
+     }
+@@ -302,3 +311,26 @@ bool CarSimulation::wait_for_real_plugin(const CmdArguments& arguments) {
+     }
+     return false;
+ }
++
++// bool CarSimulation::iso_set_departure_time(const CmdArguments& arguments) {
++//     //does not seem to save! Between the default from the config and from the UI!?!?!
++//     EVLOG_debug << "Before setting departure time is " << sim_data.iso_departure_time << " and eamount is " << sim_data.iso_eamount;
++//     EVLOG_debug << "hello ABBY";
++
++//     // the lack of saving is from resetting it somewhere! But whyyyyyyy?
++
++//     try {
++//        sim_data.iso_departure_time = std::stof(arguments[0]);
++//     } catch (const std::invalid_argument&) {
++//         EVLOG_debug << "keeping current departure time " << sim_data.iso_departure_time;
++//     }
++//     try {
++//         sim_data.iso_eamount = std::stof(arguments[1]);
++//     } catch (const std::invalid_argument&) {
++//         EVLOG_debug << "keeping current eamount " << sim_data.iso_eamount;
++//     }
++
++//     EVLOG_debug << "After setting departure time is " << sim_data.iso_departure_time << " and eamount is " << sim_data.iso_eamount;
++
++//     return true;
++// }
+\ No newline at end of file
+diff --git a/modules/EvManager/main/car_simulation.hpp b/modules/EvManager/main/car_simulation.hpp
+index 120ff3a1..dee76530 100644
+--- a/modules/EvManager/main/car_simulation.hpp
++++ b/modules/EvManager/main/car_simulation.hpp
+@@ -21,6 +21,7 @@ public:
+     ~CarSimulation() = default;
+ 
+     void reset() {
++        EVLOG_debug << "Resetting car simulation";
+         sim_data = SimulationData();
+     }
+ 
+@@ -95,6 +96,7 @@ public:
+     bool iso_wait_for_resume(const CmdArguments&);
+     bool iso_start_bcb_toggle(const CmdArguments&);
+     bool wait_for_real_plugin(const CmdArguments&);
++    // bool iso_set_departure_time(const CmdArguments&);
+ 
+ private:
+     SimulationData sim_data;
+diff --git a/modules/EvManager/main/car_simulatorImpl.cpp b/modules/EvManager/main/car_simulatorImpl.cpp
+index 3a13c270..b3845295 100644
+--- a/modules/EvManager/main/car_simulatorImpl.cpp
++++ b/modules/EvManager/main/car_simulatorImpl.cpp
+@@ -21,8 +21,6 @@ void car_simulatorImpl::init() {
+ void car_simulatorImpl::ready() {
+     subscribe_to_external_mqtt();
+ 
+-    setup_ev_parameters();
+-
+     if (mod->config.auto_enable) {
+         auto enable_copy = mod->config.auto_enable;
+         handle_enable(enable_copy);
+@@ -31,6 +29,10 @@ void car_simulatorImpl::ready() {
+         auto value_copy = mod->config.auto_exec_commands;
+         handle_execute_charging_session(value_copy);
+     }
++
++    setup_ev_parameters();
++
++    EVLOG_debug << "car simulator ready";
+ }
+ 
+ void car_simulatorImpl::handle_enable(bool& value) {
+@@ -40,6 +42,8 @@ void car_simulatorImpl::handle_enable(bool& value) {
+         return;
+     }
+ 
++    EVLOG_debug << "about to reset from handle enable";
++
+     reset_car_simulation_defaults();
+ 
+     call_ev_board_support_functions();
+@@ -56,6 +60,7 @@ void car_simulatorImpl::handle_execute_charging_session(std::string& value) {
+     }
+ 
+     set_execution_active(false);
++    EVLOG_debug << "about to reset from handle execute charging session";
+     reset_car_simulation_defaults();
+ 
+     update_command_queue(value);
+@@ -148,14 +153,32 @@ void car_simulatorImpl::register_all_commands() {
+     }
+ 
+     if (!mod->r_ev.empty()) {
++
++        EVLOG_debug << "Registering EV commands";
+         command_registry->register_command("iso_wait_pwr_ready", 0, [this](const CmdArguments& arguments) {
+             return this->car_simulation->iso_wait_pwr_ready(arguments);
+         });
+         command_registry->register_command("iso_dc_power_on", 0, [this](const CmdArguments& arguments) {
+             return this->car_simulation->iso_dc_power_on(arguments);
+         });
+-        command_registry->register_command("iso_start_v2g_session", 1, [this](const CmdArguments& arguments) {
+-            return this->car_simulation->iso_start_v2g_session(arguments, mod->config.three_phases);
++        command_registry->register_command("iso_start_v2g_session", 3, [this](const CmdArguments& arguments) {
++            auto departure_time = std::stoi(arguments[1]);
++            auto e_amount = std::stoi(arguments[2]);
++            EVLOG_debug << "Before ladder departure time is " << departure_time << " and eamount is " << e_amount;
++            if (departure_time < 0) {
++                EVLOG_debug << "Using default departure time from config";
++                departure_time = mod->config.departure_time;
++            }
++            if (e_amount < 0)  {
++                EVLOG_debug << "Using default eamount from config";
++                e_amount = mod->config.e_amount;
++            }
++            EVLOG_debug << "After ladder departure time is " << departure_time << " and eamount is " << e_amount;
++
++            // create an instance of CmdArguments with arguments[0], departure time, and e amount
++            CmdArguments args{arguments[0], std::to_string(departure_time), std::to_string(e_amount)};
++
++            return this->car_simulation->iso_start_v2g_session(args, mod->config.three_phases);
+         });
+         command_registry->register_command("iso_stop_charging", 0, [this](const CmdArguments& arguments) {
+             return this->car_simulation->iso_stop_charging(arguments);
+@@ -175,6 +198,9 @@ void car_simulatorImpl::register_all_commands() {
+         command_registry->register_command("iso_start_bcb_toggle", 1, [this](const CmdArguments& arguments) {
+             return this->car_simulation->iso_start_bcb_toggle(arguments);
+         });
++        // command_registry->register_command("iso_set_departure_time", 2, [this](const CmdArguments& arguments) {
++        //     return this->car_simulation->iso_set_departure_time(arguments);
++        // });
+     }
+ }
+ 
+@@ -261,7 +287,17 @@ void car_simulatorImpl::subscribe_to_variables_on_init() {
+ }
+ 
+ void car_simulatorImpl::setup_ev_parameters() {
++    EVLOG_debug << "Setting up EV parameters";
+     if (!mod->r_ev.empty()) {
++        // EVLOG_debug << "Setting DT with departure time: " << mod->config.departure_time
++        //             << " and e_amount: " << mod->config.e_amount;
++        // //create CmdArguments with dt and eamount
++
++        // //convert departure time to a string
++        // std::string departure_time = std::to_string(mod->config.departure_time);
++        // std::string e_amount = std::to_string(mod->config.e_amount);
++
++        // this->car_simulation->iso_set_departure_time({departure_time, e_amount});
+         mod->r_ev[0]->call_set_dc_params({mod->config.dc_max_current_limit, mod->config.dc_max_power_limit,
+                                           mod->config.dc_max_voltage_limit, mod->config.dc_energy_capacity,
+                                           mod->config.dc_target_current, mod->config.dc_target_voltage});
+diff --git a/modules/EvManager/main/command_registry.hpp b/modules/EvManager/main/command_registry.hpp
+index ebd89c9b..ff5148af 100644
+--- a/modules/EvManager/main/command_registry.hpp
++++ b/modules/EvManager/main/command_registry.hpp
+@@ -29,7 +29,7 @@ public:
+ 
+     bool operator()(const std::vector<std::string>& arguments) const override {
+         if (arguments.size() != argument_count) {
+-            throw std::invalid_argument{"Invalid number of arguments for: " + command_name};
++            throw std::invalid_argument{"Invalid number of arguments for: " + command_name + " expected "  + std::to_string(argument_count) + " got " + std::to_string(arguments.size())};
+         }
+         return function(arguments);
+     }
+diff --git a/modules/EvManager/main/simulation_data.hpp b/modules/EvManager/main/simulation_data.hpp
+index 6af9d161..3e34c6ed 100644
+--- a/modules/EvManager/main/simulation_data.hpp
++++ b/modules/EvManager/main/simulation_data.hpp
+@@ -49,6 +49,8 @@ struct SimulationData {
+     float rcd_current_ma{0.0f};
+     float pwm_duty_cycle{0.0f};
+     float last_pwm_duty_cycle{0.0f};
++    float iso_departure_time{0.0f};
++    float iso_eamount{0.0f};
+ 
+     bool dc_power_on{false};
+ 
+diff --git a/modules/EvManager/manifest.yaml b/modules/EvManager/manifest.yaml
+index d725f30b..af3ee827 100644
+--- a/modules/EvManager/manifest.yaml
++++ b/modules/EvManager/manifest.yaml
+@@ -76,6 +76,14 @@ config:
+     description: Support three phase
+     type: boolean
+     default: true
++  departure_time:
++    description: Amount of time until requested departure in seconds
++    type: integer
++    default: 86400
++  e_amount:
++    description: Amount of energy requested for charging session to be delivered before departure time in kWh
++    type: integer
++    default: 0
+ provides:
+   main:
+     interface: car_simulator
+diff --git a/modules/EvseManager/EvseManager.cpp b/modules/EvseManager/EvseManager.cpp
+index 75fe2062..46881dc6 100644
+--- a/modules/EvseManager/EvseManager.cpp
++++ b/modules/EvseManager/EvseManager.cpp
+@@ -155,6 +155,8 @@ void EvseManager::init() {
+ }
+ 
+ void EvseManager::ready() {
++    EVLOG_debug << "EvseManager ready";
++
+     bsp = std::unique_ptr<IECStateMachine>(new IECStateMachine(r_bsp, config.lock_connector_in_state_b));
+ 
+     if (config.hack_simplified_mode_limit_10A) {
+@@ -262,8 +264,8 @@ void EvseManager::ready() {
+ 
+             // FIXME: we cannot change this during run time at the moment. Refactor ISO interface to exclude transfer
+             // modes from setup
+-            // transfer_modes.push_back(types::iso15118::EnergyTransferMode::AC_single_phase_core);
+-            transfer_modes.push_back({types::iso15118::EnergyTransferMode::AC_three_phase_core, support_bidi});
++            transfer_modes.push_back({types::iso15118::EnergyTransferMode::AC_single_phase_core, support_bidi});
++            // transfer_modes.push_back({types::iso15118::EnergyTransferMode::AC_three_phase_core, support_bidi});
+ 
+         } else if (config.charge_mode == "DC") {
+             transfer_modes.push_back({types::iso15118::EnergyTransferMode::DC_extended, false});
+diff --git a/modules/EvseV2G/CMakeLists.txt b/modules/EvseV2G/CMakeLists.txt
+index 3cf29642..62ef08cf 100644
+--- a/modules/EvseV2G/CMakeLists.txt
++++ b/modules/EvseV2G/CMakeLists.txt
+@@ -34,8 +34,184 @@ pkg_search_module(EVENT REQUIRED libevent)
+ target_include_directories(${MODULE_NAME} PRIVATE
+     crypto
+     connection
++    asn1
+ )
+ 
++add_library(asn1_modules
++	asn1/ANY_aper.c
++	asn1/ANY_ber.c
++	asn1/ANY.c
++	asn1/ANY_jer.c
++	asn1/ANY_uper.c
++	asn1/ANY_xer.c
++	asn1/aper_decoder.c
++	asn1/aper_encoder.c
++	asn1/aper_opentype.c
++	asn1/aper_support.c
++	asn1/asn_application.c
++	asn1/asn_bit_data.c
++	asn1/asn_codecs_prim_ber.c
++	asn1/asn_codecs_prim.c
++	asn1/asn_codecs_prim_jer.c
++	asn1/asn_codecs_prim_xer.c
++	asn1/asn_internal.c
++	asn1/asn_random_fill.c
++	asn1/asn_SEQUENCE_OF.c
++	asn1/asn_SET_OF.c
++	asn1/AuthorizationMethod.c
++	asn1/BasicSignaling.c
++	asn1/BasicSignalingProtocol.c
++	asn1/ber_decoder.c
++	asn1/ber_tlv_length.c
++	asn1/ber_tlv_tag.c
++	asn1/BIT_STRING.c
++	asn1/BIT_STRING_jer.c
++	asn1/BIT_STRING_oer.c
++	asn1/BIT_STRING_print.c
++	asn1/BIT_STRING_rfill.c
++	asn1/BIT_STRING_uper.c
++	asn1/BIT_STRING_xer.c
++	asn1/BOOLEAN_aper.c
++	asn1/BOOLEAN_ber.c
++	asn1/BOOLEAN.c
++	asn1/BOOLEAN_jer.c
++	asn1/BOOLEAN_oer.c
++	asn1/BOOLEAN_print.c
++	asn1/BOOLEAN_rfill.c
++	asn1/BOOLEAN_uper.c
++	asn1/BOOLEAN_xer.c
++	asn1/ChargingInterface.c
++	asn1/ChargingStationCharacteristics.c
++	asn1/ConductiveChargingInterfaceLimitations.c
++	asn1/constraints.c
++	asn1/constr_CHOICE_aper.c
++	asn1/constr_CHOICE_ber.c
++	asn1/constr_CHOICE.c
++	asn1/constr_CHOICE_jer.c
++	asn1/constr_CHOICE_oer.c
++	asn1/constr_CHOICE_print.c
++	asn1/constr_CHOICE_rfill.c
++	asn1/constr_CHOICE_uper.c
++	asn1/constr_CHOICE_xer.c
++	asn1/constr_SEQUENCE_aper.c
++	asn1/constr_SEQUENCE_ber.c
++	asn1/constr_SEQUENCE.c
++	asn1/constr_SEQUENCE_jer.c
++	asn1/constr_SEQUENCE_oer.c
++	asn1/constr_SEQUENCE_OF_aper.c
++	asn1/constr_SEQUENCE_OF_ber.c
++	asn1/constr_SEQUENCE_OF.c
++	asn1/constr_SEQUENCE_OF_jer.c
++	asn1/constr_SEQUENCE_OF_uper.c
++	asn1/constr_SEQUENCE_OF_xer.c
++	asn1/constr_SEQUENCE_print.c
++	asn1/constr_SEQUENCE_rfill.c
++	asn1/constr_SEQUENCE_uper.c
++	asn1/constr_SEQUENCE_xer.c
++	asn1/constr_SET_OF_aper.c
++	asn1/constr_SET_OF_ber.c
++	asn1/constr_SET_OF.c
++	asn1/constr_SET_OF_jer.c
++	asn1/constr_SET_OF_oer.c
++	asn1/constr_SET_OF_print.c
++	asn1/constr_SET_OF_rfill.c
++	asn1/constr_SET_OF_uper.c
++	asn1/constr_SET_OF_xer.c
++	asn1/constr_TYPE.c
++	asn1/DCChargingLimits.c
++	asn1/der_encoder.c
++	asn1/EMSPIdentifier.c
++	asn1/EMSPIdentifiers.c
++	asn1/EnergyTransferMode.c
++	asn1/ENUMERATED_aper.c
++	asn1/ENUMERATED.c
++	asn1/ENUMERATED_jer.c
++	asn1/ENUMERATED_oer.c
++	asn1/ENUMERATED_uper.c
++	asn1/EVCharacteristics.c
++	asn1/Extensions.c
++	asn1/EXTERNAL.c
++	asn1/ExternalExtension.c
++	asn1/ExternalExtensions.c
++	asn1/GraphicString.c
++	asn1/HighLevelCommunication.c
++	asn1/HighLevelCommunicationTuple.c
++	asn1/HLCProtocol.c
++	asn1/INTEGER_aper.c
++	asn1/INTEGER_ber.c
++	asn1/INTEGER.c
++	asn1/INTEGER_jer.c
++	asn1/INTEGER_oer.c
++	asn1/INTEGER_print.c
++	asn1/INTEGER_rfill.c
++	asn1/INTEGER_uper.c
++	asn1/INTEGER_xer.c
++	asn1/IPv6Socket.c
++	asn1/jer_decoder.c
++	asn1/jer_encoder.c
++	asn1/jer_support.c
++	asn1/NativeEnumerated_aper.c
++	asn1/NativeEnumerated.c
++	asn1/NativeEnumerated_jer.c
++	asn1/NativeEnumerated_oer.c
++	asn1/NativeEnumerated_uper.c
++	asn1/NativeEnumerated_xer.c
++	asn1/NativeInteger_aper.c
++	asn1/NativeInteger_ber.c
++	asn1/NativeInteger.c
++	asn1/NativeInteger_jer.c
++	asn1/NativeInteger_oer.c
++	asn1/NativeInteger_print.c
++	asn1/NativeInteger_rfill.c
++	asn1/NativeInteger_uper.c
++	asn1/NativeInteger_xer.c
++	asn1/ObjectDescriptor.c
++	asn1/OBJECT_IDENTIFIER.c
++	asn1/OBJECT_IDENTIFIER_jer.c
++	asn1/OBJECT_IDENTIFIER_print.c
++	asn1/OBJECT_IDENTIFIER_rfill.c
++	asn1/OBJECT_IDENTIFIER_xer.c
++	asn1/OCTET_STRING_aper.c
++	asn1/OCTET_STRING_ber.c
++	asn1/OCTET_STRING.c
++	asn1/OCTET_STRING_jer.c
++	asn1/OCTET_STRING_oer.c
++	asn1/OCTET_STRING_print.c
++	asn1/OCTET_STRING_rfill.c
++	asn1/OCTET_STRING_uper.c
++	asn1/OCTET_STRING_xer.c
++	asn1/oer_decoder.c
++	asn1/oer_encoder.c
++	asn1/oer_support.c
++	asn1/OPEN_TYPE_aper.c
++	asn1/OPEN_TYPE_ber.c
++	asn1/OPEN_TYPE.c
++	asn1/OPEN_TYPE_jer.c
++	asn1/OPEN_TYPE_oer.c
++	asn1/OPEN_TYPE_uper.c
++	asn1/OPEN_TYPE_xer.c
++	asn1/per_decoder.c
++	asn1/per_encoder.c
++	asn1/per_opentype.c
++	asn1/per_support.c
++	asn1/SecurityProfile.c
++	asn1/SecurityProfileTuple.c
++	asn1/StandardizedExtension.c
++	asn1/StandardizedExtensions.c
++	asn1/uper_decoder.c
++	asn1/uper_encoder.c
++	asn1/uper_opentype.c
++	asn1/uper_support.c
++	asn1/UTF8String.c
++	asn1/UTF8String_print.c
++	asn1/UTF8String_rfill.c
++	asn1/xer_decoder.c
++	asn1/xer_encoder.c
++	asn1/xer_support.c
++)
++
++target_include_directories(asn1_modules PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/asn1)
++
+ target_link_libraries(${MODULE_NAME} PUBLIC ${EVENT_LIBRARIES} -levent -lpthread -levent_pthreads)
+ 
+ target_link_libraries(${MODULE_NAME}
+@@ -43,6 +219,7 @@ target_link_libraries(${MODULE_NAME}
+         cbv2g::din
+         cbv2g::iso2
+         cbv2g::tp
++        asn1_modules
+ )
+ 
+ target_sources(${MODULE_NAME}
+diff --git a/modules/EvseV2G/iso_server.cpp b/modules/EvseV2G/iso_server.cpp
+index fb3110b8..fadbe312 100644
+--- a/modules/EvseV2G/iso_server.cpp
++++ b/modules/EvseV2G/iso_server.cpp
+@@ -1171,32 +1171,57 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
+     res->EVSEChargeParameter_isUsed = 0;
+     res->EVSEProcessing = (iso2_EVSEProcessingType)conn->ctx->evse_v2g_data.evse_processing[PHASE_PARAMETER];
+ 
++ struct linked_ac_params {
++	float max_current;
++        int64_t voltage;
++        int64_t pmax;
++    };
++
++    linked_ac_params default_params;
++
++    if (conn->ctx->is_dc_charger == false) {
++        int64_t departure_time_duration = req->AC_EVChargeParameter.DepartureTime;
++        /* Determin max current and nominal voltage */
++        /* Setup default params (before the departure time overrides) */
++        default_params.max_current = conn->ctx->basic_config.evse_ac_current_limit;
++        default_params.voltage =
++            conn->ctx->evse_v2g_data.evse_nominal_voltage.Value *
++            pow(10, conn->ctx->evse_v2g_data.evse_nominal_voltage.Multiplier); /* nominal voltage */
++        default_params.pmax =
++            default_params.max_current * default_params.voltage *
++            ((req->RequestedEnergyTransferMode == iso2_EnergyTransferModeType_AC_single_phase_core) ? 1 : 3);
++
++        dlog(DLOG_LEVEL_INFO, "before adjusting for departure time, max_current %f, nom_voltage %d, pmax %d, departure_duration %d",
++            default_params.max_current, default_params.voltage,
++            default_params.pmax, departure_time_duration);
++    }
++
+     /* Configure SA-schedules*/
+     if (res->EVSEProcessing == iso2_EVSEProcessingType_Finished) {
+         /* If processing is finished, configure SASchedule list */
+         if (conn->ctx->evse_v2g_data.evse_sa_schedule_list_is_used == false) {
++	    int64_t departure_time_duration = req->AC_EVChargeParameter.DepartureTime;
++
+             /* If not configured, configure SA-schedule automatically for AC charging */
+             if (conn->ctx->is_dc_charger == false) {
+-                /* Determin max current and nominal voltage */
+-                float max_current = conn->ctx->basic_config.evse_ac_current_limit;
+-                int64_t nom_voltage =
+-                    conn->ctx->evse_v2g_data.evse_nominal_voltage.Value *
+-                    pow(10, conn->ctx->evse_v2g_data.evse_nominal_voltage.Multiplier); /* nominal voltage */
+-
+-                /* Calculate pmax based on max current, nominal voltage and phase count (which the car has selected
+-                 * above) */
+-                int64_t pmax =
+-                    max_current * nom_voltage *
+-                    ((req->RequestedEnergyTransferMode == iso2_EnergyTransferModeType_AC_single_phase_core) ? 1 : 3);
++                double req_eamount = calc_physical_value(req->AC_EVChargeParameter.EAmount.Value,
++                    req->AC_EVChargeParameter.EAmount.Multiplier);
++                dlog(DLOG_LEVEL_INFO, "Requested departure time %u, requested energy %f", 
++                    departure_time_duration, req_eamount);
++
+                 populate_physical_value(&conn->ctx->evse_v2g_data.evse_sa_schedule_list.SAScheduleTuple.array[0]
+                                              .PMaxSchedule.PMaxScheduleEntry.array[0]
+                                              .PMax,
+-                                        pmax, iso2_unitSymbolType_W);
++					     default_params.pmax, iso2_unitSymbolType_W);
+             } else {
+                 conn->ctx->evse_v2g_data.evse_sa_schedule_list.SAScheduleTuple.array[0]
+                     .PMaxSchedule.PMaxScheduleEntry.array[0]
+                     .PMax = conn->ctx->evse_v2g_data.evse_maximum_power_limit;
+             }
++	    if (departure_time_duration == 0) {
++                departure_time_duration = SA_SCHEDULE_DURATION; // one day, per spec
++            }
++
+             conn->ctx->evse_v2g_data.evse_sa_schedule_list.SAScheduleTuple.array[0]
+                 .PMaxSchedule.PMaxScheduleEntry.array[0]
+                 .RelativeTimeInterval.start = 0;
+@@ -1205,7 +1230,7 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
+                 .RelativeTimeInterval.duration_isUsed = 1;
+             conn->ctx->evse_v2g_data.evse_sa_schedule_list.SAScheduleTuple.array[0]
+                 .PMaxSchedule.PMaxScheduleEntry.array[0]
+-                .RelativeTimeInterval.duration = SA_SCHEDULE_DURATION;
++                .RelativeTimeInterval.duration = departure_time_duration;
+             conn->ctx->evse_v2g_data.evse_sa_schedule_list.SAScheduleTuple.array[0]
+                 .PMaxSchedule.PMaxScheduleEntry.arrayLen = 1;
+             conn->ctx->evse_v2g_data.evse_sa_schedule_list.SAScheduleTuple.arrayLen = 1;
+@@ -1255,12 +1280,9 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
+ 
+         /* Nominal voltage */
+         res->AC_EVSEChargeParameter.EVSENominalVoltage = conn->ctx->evse_v2g_data.evse_nominal_voltage;
+-        int64_t nom_voltage = conn->ctx->evse_v2g_data.evse_nominal_voltage.Value *
+-                              pow(10, conn->ctx->evse_v2g_data.evse_nominal_voltage.Multiplier);
+ 
+         /* Calculate pmax based on max current, nominal voltage and phase count (which the car has selected above) */
+-        int64_t pmax = max_current * nom_voltage *
+-                       ((iso2_EnergyTransferModeType_AC_single_phase_core == req->RequestedEnergyTransferMode) ? 1 : 3);
++        int64_t pmax = default_params.pmax;
+ 
+         /* Check the SASchedule */
+         if (res->SAScheduleList_isUsed == (unsigned int)1) {
+diff --git a/modules/EvseV2G/sdp.cpp b/modules/EvseV2G/sdp.cpp
+index c2d89fd6..ba1240f8 100644
+--- a/modules/EvseV2G/sdp.cpp
++++ b/modules/EvseV2G/sdp.cpp
+@@ -3,6 +3,10 @@
+ // Copyright (C) 2022-2023 Contributors to EVerest
+ #include "sdp.hpp"
+ #include "log.hpp"
++extern "C" {
++    #include "asn1/all_asn1c_headers.h"
++}
++//#include "all_asn1c_headers.h"
+ 
+ #include <arpa/inet.h>
+ #include <errno.h>
+@@ -22,18 +26,34 @@
+ #define DEBUG 1
+ 
+ /* defines for V2G SDP implementation */
+-#define SDP_SRV_PORT 15118
++#define SDP_SRV_PORT 15118 // Regular port defined in DIN SPEC 70121 [V2G-DC-159] and ISO 15118-02 [V2G2-125/205] for SDP Server
++#define ESDP_SRV_PORT 15200 // As per [V2G200-51-1/2] in ISO/PAS CD 15118-200:2024(E) - STANDARD NOT YET PUBLISHED
+ 
+ #define SDP_VERSION         0x01
+ #define SDP_INVERSE_VERSION 0xfe
+ 
+-#define SDP_HEADER_LEN           8
++#define SDP_HEADER_LEN           8 // Header length is the same for SDP and ESDP as per [V2G200-4-1] in ISO/PAS CD 15118-200:2024(E)
+ #define SDP_REQUEST_PAYLOAD_LEN  2
+ #define SDP_RESPONSE_PAYLOAD_LEN 20
+ 
++// Define ESDP Req & Res payload lengths for ESDP (Subject to change)
++#define MAX_ESDP_REQUEST_PAYLOAD_LEN 512
++#define MAX_ESDP_RESPONSE_PAYLOAD_LEN 512
++
++// Assign regular SDP Payload types as per DIN 70121 [V2G2-DC-194/208] & ISO 15118-02 [V2G2-140/152]
+ #define SDP_REQUEST_TYPE  0x9000
+ #define SDP_RESPONSE_TYPE 0x9001
+ 
++// Assign ESDP Payload types as per [V2G200-41-1] in ISO/PAS CD 15118-200:2024(E) - STANDARD NOT YET PUBLISHED
++#define ESDP_REQUEST_TYPE  0x2000 
++#define ESDP_RESPONSE_TYPE 0x2000
++
++// Define ESDP Version for verification as per [V2G200-52-2] in ISO/PAS CD 15118-200:2024(E)
++#define ESDP_VERSION        0x0100
++
++// Define Maximum V2GTP Paylod Size as per [V2G200-52-3] in ISO/PAS CD 15118-200:2024(E)
++#define ESDP_MAX_V2GTP_PAYLOAD_SIZE 0x1000
++
+ #define POLL_TIMEOUT 20
+ 
+ /* link-local multicast address ff02::1 aka ip6-allnodes */
+@@ -51,7 +71,8 @@ struct sdp_query {
+ };
+ 
+ /*
+- * Fills the SDP header into a given buffer
++ * Fills the SDP header into a given buffer. Same function for both SDP and ESDP
++ * since the header length is the same for both
+  */
+ int sdp_write_header(uint8_t* buffer, uint16_t payload_type, uint32_t payload_len) {
+     int offset = 0;
+@@ -103,6 +124,51 @@ int sdp_validate_header(uint8_t* buffer, uint16_t expected_payload_type, uint32_
+     return 0;
+ }
+ 
++static int esdp_validate_header(uint8_t* buffer, uint16_t expected_payload_type, uint32_t max_esdp_payload_len, uint16_t expected_esdp_version) {
++    /* Returns -1 for invalid V2GTP header, 1 for invalid ESDP Header (version, max payload size), and 0 otherwise*/
++
++    uint16_t payload_type;
++    uint32_t payload_len;
++    uint16_t esdp_version;
++
++    if (buffer[0] != SDP_VERSION) {
++        dlog(DLOG_LEVEL_ERROR, "Invalid SDP version in header of ESDP packet");
++        return -1;
++    }
++
++    if (buffer[1] != SDP_INVERSE_VERSION) {
++        dlog(DLOG_LEVEL_ERROR, "Invalid SDP inverse version in header of ESDP packet");
++        return -1;
++    }
++
++    payload_type = (buffer[2] << 8) + buffer[3];
++    if (payload_type != expected_payload_type) {
++        dlog(DLOG_LEVEL_ERROR, "Invalid payload type: expected %" PRIu16 ", received %" PRIu16 " in header of ESDP packet",
++             expected_payload_type, payload_type);
++        return -1;
++    }
++
++    payload_len = (buffer[4] << 24) + (buffer[5] << 16) + (buffer[6] << 8) + buffer[7];
++    if (payload_len >= max_esdp_payload_len) {
++        dlog(DLOG_LEVEL_ERROR, "Size of ESDPReq payload exceeds max limit. ESDPReq payload is %" PRIu32 " bytes while max limit is %" PRIu32 " bytes",
++             payload_len, max_esdp_payload_len);
++        return 1;
++    }
++    
++    /* Verify ESDP version as per [V2G200-52-2] in ISO/PAS CD 15118-200:2024(E). Added for ESDP */
++    esdp_version = (buffer[8] << 8) + buffer[9];    
++    if (esdp_version != expected_esdp_version) {
++    	dlog(DLOG_LEVEL_ERROR, "Unsupported ESDP Version: expected %" PRIu16 ", received %" PRIu16 " in ESDP Payload",
++    	     expected_esdp_version, esdp_version);
++     	dlog(DLOG_LEVEL_ERROR, "The last ESDP packet will be discarded since the ESDP version is unsupported");
++     	return 1;
++    } else {
++        dlog(DLOG_LEVEL_INFO, "EVCC's reported ESDP Version: %" PRIu16, esdp_version);
++    }
++    
++    return 0;
++}
++
+ int sdp_create_response(uint8_t* buffer, struct sockaddr_in6* addr, enum sdp_security security,
+                         enum sdp_transport_protocol proto) {
+     int offset = SDP_HEADER_LEN;
+@@ -124,6 +190,349 @@ int sdp_create_response(uint8_t* buffer, struct sockaddr_in6* addr, enum sdp_sec
+ 
+     return offset;
+ }
++
++int encode_ESDPRes_Extensions(uint8_t* buffer_esdp, int offset, struct sockaddr_in6* addr, enum sdp_security security) {
++    /* Create and populate Extensions */
++    Extensions_t *extensions = (Extensions_t *)calloc(1, sizeof(Extensions_t));
++    if (!extensions) {
++        dlog(DLOG_LEVEL_ERROR, "Failed to allocate memory for extensions");
++    }
++
++    /* ExtensionID 1 - Charging interface extension */
++    /* Using placeholder value corresponding to CCS1 for charging interface */
++    /* All enumerations can be found in asn1/ChargingInterface.h */
++    StandardizedExtension_t *charging_interface_ext = (StandardizedExtension_t *)calloc(1, sizeof(StandardizedExtension_t));
++    if (!charging_interface_ext) {
++        dlog(DLOG_LEVEL_ERROR, "Failed to allocate memory for Charging Interface Extension");
++    }
++    charging_interface_ext -> extensionID = 1;
++    ChargingInterface_t charging_interface = ChargingInterface_ccs1;
++    uint8_t *ci_buffer = (uint8_t *)calloc(128, sizeof(uint8_t));
++    asn_enc_rval_t ci_enc_rval = der_encode_to_buffer(&asn_DEF_ChargingInterface, &charging_interface,
++                    ci_buffer, 128);
++    //dlog(DLOG_LEVEL_INFO, "ChargingInterface data encoded: %zu bytes\n", ci_enc_rval.encoded);
++    OCTET_STRING_fromBuf(&charging_interface_ext -> extensionValue, (char *)ci_buffer, ci_enc_rval.encoded);
++    ASN_SEQUENCE_ADD(&extensions -> standardized, charging_interface_ext);
++    free(ci_buffer);
++
++    /* ExtensionID 2 - Basic signaling extension */
++    /* Using a placeholder list including all Protocols defined in ISO/PAS CD 15118-200:2024(E) */
++    StandardizedExtension_t *basic_signaling_ext = (StandardizedExtension_t *)calloc(1, sizeof(StandardizedExtension_t));
++    basic_signaling_ext -> extensionID = 2;
++    BasicSignaling_t *basic_signaling = (BasicSignaling_t *)calloc(1, sizeof(BasicSignaling_t));
++    BasicSignalingProtocol_t *protocol01 = (BasicSignalingProtocol_t *)calloc(1, sizeof(BasicSignalingProtocol_t));
++    BasicSignalingProtocol_t *protocol02 = (BasicSignalingProtocol_t *)calloc(1, sizeof(BasicSignalingProtocol_t));
++    BasicSignalingProtocol_t *protocol03 = (BasicSignalingProtocol_t *)calloc(1, sizeof(BasicSignalingProtocol_t));
++    BasicSignalingProtocol_t *protocol04 = (BasicSignalingProtocol_t *)calloc(1, sizeof(BasicSignalingProtocol_t));
++    *protocol01 = BasicSignalingProtocol_iec61851_1_ED2;
++    *protocol02 = BasicSignalingProtocol_iec61851_1_ED3;
++    *protocol03 = BasicSignalingProtocol_iec61851_23_ED1;
++    *protocol04 = BasicSignalingProtocol_iec61851_23_ED2;
++    ASN_SEQUENCE_ADD(&basic_signaling -> list, protocol01);
++    ASN_SEQUENCE_ADD(&basic_signaling -> list, protocol02);
++    ASN_SEQUENCE_ADD(&basic_signaling -> list, protocol03);
++    ASN_SEQUENCE_ADD(&basic_signaling -> list, protocol04);       
++    uint8_t *bs_buffer = (uint8_t *)calloc(128, sizeof(uint8_t));
++    asn_enc_rval_t bs_enc_rval = der_encode_to_buffer(&asn_DEF_BasicSignaling, basic_signaling, bs_buffer, 128);
++    //dlog(DLOG_LEVEL_INFO, "Basic Signaling data encoded: %zu bytes\n", bs_enc_rval.encoded);
++    OCTET_STRING_fromBuf(&basic_signaling_ext -> extensionValue, (char *)bs_buffer, bs_enc_rval.encoded);
++    ASN_SEQUENCE_ADD(&extensions -> standardized, basic_signaling_ext);
++    free(bs_buffer);
++
++    /* ExtensionID 3 - IPv6 Socket extension */
++    StandardizedExtension_t *ipv6_socket_ext = (StandardizedExtension_t *)calloc(1, sizeof(StandardizedExtension_t));
++    ipv6_socket_ext -> extensionID = 3;
++    IPv6Socket_t *ipv6_socket = (IPv6Socket_t *)calloc(1, sizeof(IPv6Socket_t));
++    uint8_t ipv6_secc_address[sizeof(addr -> sin6_addr)] = {0};
++    uint8_t ipv6_secc_port[4] = {0};
++    memcpy(&ipv6_secc_address[0], &addr->sin6_addr, sizeof(addr->sin6_addr));
++    memcpy(&ipv6_secc_port[2], &addr->sin6_port, sizeof(addr->sin6_port));
++    OCTET_STRING_fromBuf(&ipv6_socket -> ipv6Address, (const char *)&ipv6_secc_address, sizeof(ipv6_secc_address));
++    OCTET_STRING_fromBuf(&ipv6_socket -> tcpPort, (const char *)&ipv6_secc_port, sizeof(ipv6_secc_port));
++    uint8_t *ip_buffer = (uint8_t *)calloc(128, sizeof(uint8_t));
++    asn_enc_rval_t ip_enc_rval = der_encode_to_buffer(&asn_DEF_IPv6Socket, ipv6_socket, ip_buffer, 128);
++    //dlog(DLOG_LEVEL_INFO, "IPv6 Socket data encoded: %zu bytes\n", ip_enc_rval.encoded);
++    OCTET_STRING_fromBuf(&ipv6_socket_ext -> extensionValue, (char *)ip_buffer, ip_enc_rval.encoded);
++    ASN_SEQUENCE_ADD(&extensions -> standardized, ipv6_socket_ext);
++    free(ip_buffer);
++
++    /* Placeholder switch block. Can be used to selectively encode HLC Extension */
++    /* switch (security) {
++        case SDP_SECURITY_TLS:
++            sec_profile01 -> securityProfile = SecurityProfile_tls12_server;
++        case SDP_SECURITY_NONE:
++            sec_profile01 -> securityProfile = SecurityProfile_tcpOnly;
++            break;
++        default:
++            dlog(DLOG_LEVEL_ERROR, "Unknown Security. Unable to encode correct security into ESDPResponse's HLC extension");
++            break:
++    } */
++
++    /* ExtensionID 4 - High Level Communication extension */
++    /* Using a placeholder list of all possible combinations for now. Use the switch block above to selectively encode supported HLC Extensions.
++        Then remove unsupported combinations in the future */
++    StandardizedExtension_t *hlc_ext = (StandardizedExtension_t *)calloc(1, sizeof(StandardizedExtension_t));
++    hlc_ext -> extensionID = 4;
++    HighLevelCommunication_t *hlc = (HighLevelCommunication_t *)calloc(1, sizeof(HighLevelCommunication_t));
++
++    /* First HLC Tuple - For DIN 70121:2014 (TCP with EIM with DC) */
++    HighLevelCommunicationTuple_t *hlc_tuple01 = (HighLevelCommunicationTuple_t *)calloc(1, sizeof(HighLevelCommunicationTuple_t));
++    hlc_tuple01 -> hlcProtocol = HLCProtocol_din_spec_70121_2014;
++    SecurityProfileTuple_t *sec_profile01 = (SecurityProfileTuple_t *)calloc(1, sizeof(SecurityProfileTuple_t));
++    sec_profile01 -> securityProfile = SecurityProfile_tcpOnly;
++    AuthorizationMethod_t *auth01 = (AuthorizationMethod_t *)calloc(1, sizeof(AuthorizationMethod_t));
++    *auth01 = AuthorizationMethod_eim;
++    EnergyTransferMode_t *mode01 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode01 = EnergyTransferMode_dc;
++    ASN_SEQUENCE_ADD(&sec_profile01 -> authorizationMethod.list, auth01);
++    ASN_SEQUENCE_ADD(&sec_profile01 -> energyTransferMode.list, mode01);
++    ASN_SEQUENCE_ADD(&hlc_tuple01 -> securityProfileTuple.list, sec_profile01);
++    ASN_SEQUENCE_ADD(&hlc -> list, hlc_tuple01);
++
++    /* Second HLC Tuple - For ISO 15118-2:2014 (TCP with EIM with dc & ac) */
++    HighLevelCommunicationTuple_t *hlc_tuple02 = (HighLevelCommunicationTuple_t *)calloc(1, sizeof(HighLevelCommunicationTuple_t));
++    hlc_tuple02 -> hlcProtocol = HLCProtocol_iso_15118_2_2014;
++    SecurityProfileTuple_t *sec_profile02_01 = (SecurityProfileTuple_t *)calloc(1, sizeof(SecurityProfileTuple_t));
++    sec_profile02_01 -> securityProfile = SecurityProfile_tcpOnly;
++    AuthorizationMethod_t *auth02_01 = (AuthorizationMethod_t *)calloc(1, sizeof(AuthorizationMethod_t));
++    *auth02_01 = AuthorizationMethod_eim;
++    EnergyTransferMode_t *mode02_01_01 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode02_01_01 = EnergyTransferMode_dc;
++    EnergyTransferMode_t *mode02_01_02 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode02_01_02 = EnergyTransferMode_ac;
++    ASN_SEQUENCE_ADD(&sec_profile02_01 -> authorizationMethod.list, auth02_01);
++    ASN_SEQUENCE_ADD(&sec_profile02_01 -> energyTransferMode.list, mode02_01_01);
++    ASN_SEQUENCE_ADD(&sec_profile02_01 -> energyTransferMode.list, mode02_01_02);
++    
++    /* and (TLS12_server with EIM & PNC_2 with dc & ac) */
++    SecurityProfileTuple_t *sec_profile02_02 = (SecurityProfileTuple_t *)calloc(1, sizeof(SecurityProfileTuple_t));
++    sec_profile02_02 -> securityProfile = SecurityProfile_tls12_server;
++    AuthorizationMethod_t *auth02_02_01 = (AuthorizationMethod_t *)calloc(1, sizeof(AuthorizationMethod_t));
++    *auth02_02_01 = AuthorizationMethod_eim;
++    AuthorizationMethod_t *auth02_02_02 = (AuthorizationMethod_t *)calloc(1, sizeof(AuthorizationMethod_t));
++    *auth02_02_02 = AuthorizationMethod_pnc_2;
++    EnergyTransferMode_t *mode02_02_01 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode02_02_01 = EnergyTransferMode_dc;
++    EnergyTransferMode_t *mode02_02_02 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode02_02_02 = EnergyTransferMode_ac;
++    ASN_SEQUENCE_ADD(&sec_profile02_02 -> authorizationMethod.list, auth02_02_01);
++    ASN_SEQUENCE_ADD(&sec_profile02_02 -> authorizationMethod.list, auth02_02_02);
++    ASN_SEQUENCE_ADD(&sec_profile02_02 -> energyTransferMode.list, mode02_02_01);
++    ASN_SEQUENCE_ADD(&sec_profile02_02 -> energyTransferMode.list, mode02_02_02);  
++    ASN_SEQUENCE_ADD(&hlc_tuple02 -> securityProfileTuple.list, sec_profile02_01);
++    ASN_SEQUENCE_ADD(&hlc_tuple02 -> securityProfileTuple.list, sec_profile02_02);
++    ASN_SEQUENCE_ADD(&hlc -> list, hlc_tuple02);
++
++    /* Third HLC Tuple - For ISO 15118-20:2022 (TCP with EIM with dc & dc-bpt & ac & ac-bpt) */
++    HighLevelCommunicationTuple_t *hlc_tuple03 = (HighLevelCommunicationTuple_t *)calloc(1, sizeof(HighLevelCommunicationTuple_t));
++    hlc_tuple03 -> hlcProtocol = HLCProtocol_iso_15118_20_2022;
++    SecurityProfileTuple_t *sec_profile03_01 = (SecurityProfileTuple_t *)calloc(1, sizeof(SecurityProfileTuple_t));
++    sec_profile03_01 -> securityProfile = SecurityProfile_tcpOnly;
++    AuthorizationMethod_t *auth03_01 = (AuthorizationMethod_t *)calloc(1, sizeof(AuthorizationMethod_t));
++    *auth03_01 = AuthorizationMethod_eim;
++    EnergyTransferMode_t *mode03_01_01 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode03_01_01 = EnergyTransferMode_dc;
++    EnergyTransferMode_t *mode03_01_02 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode03_01_02 = EnergyTransferMode_dc_bpt;    
++    EnergyTransferMode_t *mode03_01_03 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode03_01_03 = EnergyTransferMode_ac;
++    EnergyTransferMode_t *mode03_01_04 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode03_01_04 = EnergyTransferMode_ac_bpt;    
++    ASN_SEQUENCE_ADD(&sec_profile03_01 -> authorizationMethod.list, auth03_01);
++    ASN_SEQUENCE_ADD(&sec_profile03_01 -> energyTransferMode.list, mode03_01_01);
++    ASN_SEQUENCE_ADD(&sec_profile03_01 -> energyTransferMode.list, mode03_01_02);
++    ASN_SEQUENCE_ADD(&sec_profile03_01 -> energyTransferMode.list, mode03_01_03);
++    ASN_SEQUENCE_ADD(&sec_profile03_01 -> energyTransferMode.list, mode03_01_04);
++
++    /* and (TLS12_server with EIM & PNC_2 with dc & dc-bpt & ac & ac-bpt) */
++    SecurityProfileTuple_t *sec_profile03_02 = (SecurityProfileTuple_t *)calloc(1, sizeof(SecurityProfileTuple_t));
++    sec_profile03_02 -> securityProfile = SecurityProfile_tls12_server;
++    AuthorizationMethod_t *auth03_02_01 = (AuthorizationMethod_t *)calloc(1, sizeof(AuthorizationMethod_t));
++    *auth03_02_01 = AuthorizationMethod_eim;
++    AuthorizationMethod_t *auth03_02_02 = (AuthorizationMethod_t *)calloc(1, sizeof(AuthorizationMethod_t));
++    *auth03_02_02 = AuthorizationMethod_pnc_2;
++    EnergyTransferMode_t *mode03_02_01 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode03_02_01 = EnergyTransferMode_dc;
++    EnergyTransferMode_t *mode03_02_02 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode03_02_02 = EnergyTransferMode_dc_bpt;    
++    EnergyTransferMode_t *mode03_02_03 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode03_02_03 = EnergyTransferMode_ac;
++    EnergyTransferMode_t *mode03_02_04 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode03_02_04 = EnergyTransferMode_ac_bpt;
++    ASN_SEQUENCE_ADD(&sec_profile03_02 -> authorizationMethod.list, auth03_02_01);
++    ASN_SEQUENCE_ADD(&sec_profile03_02 -> authorizationMethod.list, auth03_02_02);
++    ASN_SEQUENCE_ADD(&sec_profile03_02 -> energyTransferMode.list, mode03_02_01);
++    ASN_SEQUENCE_ADD(&sec_profile03_02 -> energyTransferMode.list, mode03_02_02);
++    ASN_SEQUENCE_ADD(&sec_profile03_02 -> energyTransferMode.list, mode03_02_03);
++    ASN_SEQUENCE_ADD(&sec_profile03_02 -> energyTransferMode.list, mode03_02_04);
++    
++    /* and (TLS13_mutual with EIM & PNC_2 & PNC_20 with dc & dc-bpt & ac & ac-bpt) */
++    SecurityProfileTuple_t *sec_profile03_03 = (SecurityProfileTuple_t *)calloc(1, sizeof(SecurityProfileTuple_t));
++    sec_profile03_03 -> securityProfile = SecurityProfile_tls13_mutual;
++    AuthorizationMethod_t *auth03_03_01 = (AuthorizationMethod_t *)calloc(1, sizeof(AuthorizationMethod_t));
++    *auth03_03_01 = AuthorizationMethod_eim;
++    AuthorizationMethod_t *auth03_03_02 = (AuthorizationMethod_t *)calloc(1, sizeof(AuthorizationMethod_t));
++    *auth03_03_02 = AuthorizationMethod_pnc_2;
++    AuthorizationMethod_t *auth03_03_03 = (AuthorizationMethod_t *)calloc(1, sizeof(AuthorizationMethod_t));
++    *auth03_03_03 = AuthorizationMethod_pnc_20;    
++    EnergyTransferMode_t *mode03_03_01 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode03_03_01 = EnergyTransferMode_dc;
++    EnergyTransferMode_t *mode03_03_02 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode03_03_02 = EnergyTransferMode_dc_bpt;    
++    EnergyTransferMode_t *mode03_03_03 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode03_03_03 = EnergyTransferMode_ac;
++    EnergyTransferMode_t *mode03_03_04 = (EnergyTransferMode_t *)calloc(1, sizeof(EnergyTransferMode_t));
++    *mode03_03_04 = EnergyTransferMode_ac_bpt;
++    ASN_SEQUENCE_ADD(&sec_profile03_03 -> authorizationMethod.list, auth03_03_01);
++    ASN_SEQUENCE_ADD(&sec_profile03_03 -> authorizationMethod.list, auth03_03_02);
++    ASN_SEQUENCE_ADD(&sec_profile03_03 -> authorizationMethod.list, auth03_03_03);    
++    ASN_SEQUENCE_ADD(&sec_profile03_03 -> energyTransferMode.list, mode03_03_01);
++    ASN_SEQUENCE_ADD(&sec_profile03_03 -> energyTransferMode.list, mode03_03_02);
++    ASN_SEQUENCE_ADD(&sec_profile03_03 -> energyTransferMode.list, mode03_03_03);
++    ASN_SEQUENCE_ADD(&sec_profile03_03 -> energyTransferMode.list, mode03_03_04);
++    ASN_SEQUENCE_ADD(&hlc_tuple03 -> securityProfileTuple.list, sec_profile03_01);
++    ASN_SEQUENCE_ADD(&hlc_tuple03 -> securityProfileTuple.list, sec_profile03_02);
++    ASN_SEQUENCE_ADD(&hlc_tuple03 -> securityProfileTuple.list, sec_profile03_03);
++    ASN_SEQUENCE_ADD(&hlc -> list, hlc_tuple03);
++    
++    /* Add hlc sequence of hlc_tuples to extensions -> extensionValue and standardized extension */
++    uint8_t *hlc_buffer = (uint8_t *)calloc(256, sizeof(uint8_t));
++    asn_enc_rval_t hlc_enc_rval = der_encode_to_buffer(&asn_DEF_HighLevelCommunication, hlc, hlc_buffer, 256);
++    //dlog(DLOG_LEVEL_INFO, "HLC data encoded: %zu bytes\n", hlc_enc_rval.encoded);
++    OCTET_STRING_fromBuf(&hlc_ext -> extensionValue, (char *)hlc_buffer, hlc_enc_rval.encoded);
++    ASN_SEQUENCE_ADD(&extensions -> standardized, hlc_ext);
++    free(hlc_buffer);
++
++    /* ExtensionID 5 - EMSP identifiers extension */
++    /* Using placeholder EMSP values for now */
++    /* Be sure to order EMSPIdentifiers list based on priority per [V2G200-542-3] in ISO/PAS CD 15118-200:2024(E) - STANDARD NOT YET PUBLISHED */
++    StandardizedExtension_t *emsp_ids_ext = (StandardizedExtension_t *)calloc(1, sizeof(StandardizedExtension_t));
++    emsp_ids_ext -> extensionID = 5;
++    EMSPIdentifiers_t *emsp_ids = (EMSPIdentifiers_t *)calloc(1, sizeof(EMSPIdentifiers_t));
++    EMSPIdentifier_t *emsp_id01 = (EMSPIdentifier_t *)calloc(1, sizeof(EMSPIdentifier_t));
++    OCTET_STRING_fromBuf(emsp_id01, "EMSP_1", strlen("EMSP_1"));
++    ASN_SEQUENCE_ADD(&emsp_ids -> list, emsp_id01);
++    EMSPIdentifier_t *emsp_id02 = (EMSPIdentifier_t *)calloc(1, sizeof(EMSPIdentifier_t));
++    OCTET_STRING_fromBuf(emsp_id02, "EMSP_2", strlen("EMSP_2"));
++    ASN_SEQUENCE_ADD(&emsp_ids -> list, emsp_id02);
++    uint8_t *emsp_buffer = (uint8_t *)calloc(128, sizeof(uint8_t));
++    asn_enc_rval_t emsp_enc_rval = der_encode_to_buffer(&asn_DEF_EMSPIdentifiers, emsp_ids, emsp_buffer, 128);
++    //dlog(DLOG_LEVEL_INFO, "EMSP Identifiers data encoded: %zu bytes\n", emsp_enc_rval.encoded);
++    OCTET_STRING_fromBuf(&emsp_ids_ext -> extensionValue, (char *)emsp_buffer, emsp_enc_rval.encoded);
++    ASN_SEQUENCE_ADD(&extensions -> standardized, emsp_ids_ext);
++    free(emsp_buffer);
++
++    /* ExtensionID 6 - DC charging limits extension */
++    /* Using placeholder values for Maximum and Minimum voltage limits */
++    StandardizedExtension_t *dc_limits_ext = (StandardizedExtension_t *)calloc(1, sizeof(StandardizedExtension_t));
++    dc_limits_ext -> extensionID = 6;
++    DCChargingLimits_t *dc_limits = (DCChargingLimits_t *)calloc(1, sizeof(DCChargingLimits_t));
++    dc_limits -> maximumVoltage = 1000;
++    dc_limits -> minimumVoltage = 250;
++    uint8_t *dc_limits_buffer = (uint8_t *)calloc(128, sizeof(uint8_t));
++    asn_enc_rval_t dc_limits_enc_rval = der_encode_to_buffer(&asn_DEF_DCChargingLimits, dc_limits, dc_limits_buffer, 128);
++    //dlog(DLOG_LEVEL_INFO, "DC Charging Limits data encoded: %zu bytes\n", dc_limits_enc_rval.encoded);
++    OCTET_STRING_fromBuf(&dc_limits_ext -> extensionValue, (char *)dc_limits_buffer, dc_limits_enc_rval.encoded);
++    ASN_SEQUENCE_ADD(&extensions -> standardized, dc_limits_ext);
++    free(dc_limits_buffer);
++
++    /* ExtensionID 7 - Conductive Charging Interface Limitations extension */
++    /* Using placeholder values for Maximum contactor temperature */
++    StandardizedExtension_t *chrg_int_limits_ext = (StandardizedExtension_t *)calloc(1, sizeof(StandardizedExtension_t));
++    chrg_int_limits_ext -> extensionID = 7;
++    ConductiveChargingInterfaceLimitations_t *chrg_int_limits = (ConductiveChargingInterfaceLimitations_t *)calloc(1, sizeof(ConductiveChargingInterfaceLimitations_t));
++    chrg_int_limits -> maximumContactorTemperature = 80;
++    uint8_t *chrg_int_limits_buffer = (uint8_t *)calloc(128, sizeof(uint8_t));
++    asn_enc_rval_t chrg_int_limits_enc_rval = der_encode_to_buffer(&asn_DEF_ConductiveChargingInterfaceLimitations,
++                    chrg_int_limits, chrg_int_limits_buffer, 128);
++    //dlog(DLOG_LEVEL_INFO, "Conductive Charging Interface Limits data encoded: %zu bytes\n", chrg_int_limits_enc_rval.encoded);
++    OCTET_STRING_fromBuf(&chrg_int_limits_ext -> extensionValue, (char *)chrg_int_limits_buffer,
++                    chrg_int_limits_enc_rval.encoded);
++    ASN_SEQUENCE_ADD(&extensions -> standardized, chrg_int_limits_ext);
++    free(chrg_int_limits_buffer);
++
++    /* ExtensionID 8 - EV Characteristics extension */
++    StandardizedExtension_t *evChar_ext = (StandardizedExtension_t *)calloc(1, sizeof(StandardizedExtension_t));
++    evChar_ext -> extensionID = 8;
++    EVCharacteristics_t *evChar = (EVCharacteristics_t *)calloc(1, sizeof(EVCharacteristics_t));
++    evChar -> vehicleIdentificationNumber = (OCTET_STRING_t *)calloc(1, sizeof(OCTET_STRING_t));
++    evChar -> evccSoftwareVersion = (UTF8String_t *)calloc(1, sizeof(UTF8String_t));
++    const uint8_t vin[] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00};
++    const unsigned char evcc_sw[] = "v2.5.6_20241031";
++    OCTET_STRING_fromBuf(evChar -> vehicleIdentificationNumber, (char *)vin, sizeof(vin));
++    OCTET_STRING_fromBuf(evChar -> evccSoftwareVersion, (char *)evcc_sw, sizeof(evcc_sw));
++    uint8_t *evChar_buffer = (uint8_t *)calloc(128, sizeof(uint8_t));
++    asn_enc_rval_t evChar_enc_rval = der_encode_to_buffer(&asn_DEF_EVCharacteristics, evChar, evChar_buffer, 128);
++    //dlog(DLOG_LEVEL_INFO, "EV Characteristics data encoded: %zu bytes\n", evChar_enc_rval.encoded);
++    OCTET_STRING_fromBuf(&evChar_ext -> extensionValue, (char *)evChar_buffer, evChar_enc_rval.encoded);
++    ASN_SEQUENCE_ADD(&extensions -> standardized, evChar_ext);
++    free(evChar_buffer);
++
++    /* ExtensionID 9 - Charging Station Characteristics extension */
++    /* Using placeholder values for evseID and EVSE Software version */
++    StandardizedExtension_t *evseChar_ext = (StandardizedExtension_t *)calloc(1,sizeof(StandardizedExtension_t));
++    evseChar_ext -> extensionID = 9;
++    ChargingStationCharacteristics_t *evseChar = (ChargingStationCharacteristics_t *)calloc(1, sizeof(ChargingStationCharacteristics_t));
++    evseChar -> evseID = (OCTET_STRING_t *)calloc(1, sizeof(OCTET_STRING_t));
++    evseChar -> seccSoftwareVersion = (UTF8String_t *)calloc(1, sizeof(UTF8String_t));
++    const uint8_t evseID[] = {0x08, 0x00, 0x27, 0x0F, 0x1D, 0x55};
++    const char evse_sw[] = "vXX.XX.XX";
++    OCTET_STRING_fromBuf(evseChar -> evseID, (char *)evseID, sizeof(evseID));
++    OCTET_STRING_fromBuf(evseChar -> seccSoftwareVersion, evse_sw, sizeof(evse_sw));
++    uint8_t *evseChar_buffer = (uint8_t *)calloc(128, sizeof(uint8_t));
++    asn_enc_rval_t evseChar_enc_rval = der_encode_to_buffer(&asn_DEF_ChargingStationCharacteristics, evseChar, evseChar_buffer, 128);
++    //dlog(DLOG_LEVEL_INFO, "EVSE Characteristics data encoded: %zu bytes\n", evseChar_enc_rval.encoded);
++    OCTET_STRING_fromBuf(&evseChar_ext -> extensionValue, (char *)evseChar_buffer, evseChar_enc_rval.encoded);
++    ASN_SEQUENCE_ADD(&extensions -> standardized, evseChar_ext);
++    free(evseChar_buffer);
++
++    /* The following commented code block can be used for debugging asn1 encode output */
++    //xer_fprint(stdout, &asn_DEF_Extensions, extensions);
++    /* dlog(DLOG_LEVEL_INFO, "Number of standardized extensions: %ld", extensions->standardized.list.count);
++    for (int p = 0; p < extensions -> standardized.list.count; p++) {
++        StandardizedExtension_t *temp = extensions -> standardized.list.array[p];
++        dlog(DLOG_LEVEL_INFO, "Extension ID: %ld, Value Size: %ld", temp -> extensionID, temp -> extensionValue.size);
++    } */
++
++    asn_enc_rval_t ec = der_encode_to_buffer(&asn_DEF_Extensions, extensions, buffer_esdp + offset, MAX_ESDP_RESPONSE_PAYLOAD_LEN);
++    if (ec.encoded <= 0) {
++        dlog(DLOG_LEVEL_ERROR, "Failed to encode ESDP Extensions to ESDP buffer. encoded: %ld", ec.encoded);
++        dlog(DLOG_LEVEL_ERROR, "DER encoding failed at type: %s", ec.failed_type -> name);
++        return -1;
++    } else {
++        dlog(DLOG_LEVEL_INFO, "ESDP extensions data encoded: %zu bytes", ec.encoded);
++        offset += ec.encoded;
++    }
++
++    return offset;
++}
++
++/* Create response packet for ESDP */
++int esdp_create_response(uint8_t* buffer_esdp, struct sockaddr_in6* addr, enum sdp_security security,
++                        enum sdp_transport_protocol proto) {
++    int offset = SDP_HEADER_LEN; // Header length is same for both SDP and ESDP
++    int encode_return;
++    
++    // Write ESDP Version
++    buffer_esdp[offset++] = (ESDP_VERSION >> 8) & 0xff;
++    buffer_esdp[offset++] = ESDP_VERSION & 0xff;
++    
++    // Write Max V2GTP Payload Size
++    buffer_esdp[offset++] = (ESDP_MAX_V2GTP_PAYLOAD_SIZE >> 8) & 0xff;
++    buffer_esdp[offset++] = ESDP_MAX_V2GTP_PAYLOAD_SIZE & 0xff;
++
++    /* Now fill in the rest of the buffer with ESDP Extensions payload */
++    encode_return = encode_ESDPRes_Extensions(buffer_esdp, offset, addr, security);
++    if (encode_return > 0) {
++        offset = encode_return;
++    }
++
++    /* now fill in the header with payload length */
++    sdp_write_header(buffer_esdp, ESDP_RESPONSE_TYPE, offset - SDP_HEADER_LEN);
++
++    return offset;
++}
++
+ /*
+  * Sends a SDP response packet
+  */
+@@ -198,8 +607,415 @@ int sdp_send_response(int sdp_socket, struct sdp_query* sdp_query) {
+     return rv;
+ }
+ 
++/*
++ * Sends a response packet for ESDP
++ */
++int esdp_send_response(int esdp_socket, struct sdp_query* sdp_query) {
++    uint8_t buffer_esdp[SDP_HEADER_LEN + MAX_ESDP_RESPONSE_PAYLOAD_LEN];
++    int rv = 0;
++    int esdp_response_size;
++
++    /* at the moment we only understand TCP protocol */
++    if (sdp_query->proto_requested != SDP_TRANSPORT_PROTOCOL_TCP) {
++        dlog(DLOG_LEVEL_ERROR, "ESDP requested unsupported protocol 0x%02x, announcing nothing",
++             sdp_query->proto_requested);
++        return 1;
++    }
++
++    switch (sdp_query->security_requested) {
++    case SDP_SECURITY_TLS:
++        if (sdp_query->v2g_ctx->local_tls_addr) {
++            dlog(DLOG_LEVEL_INFO, "ESDP requested TLS, announcing TLS");
++            esdp_response_size = esdp_create_response(buffer_esdp, sdp_query->v2g_ctx->local_tls_addr, SDP_SECURITY_TLS,
++                                SDP_TRANSPORT_PROTOCOL_TCP);
++            break;
++        }
++        if (sdp_query->v2g_ctx->local_tcp_addr) {
++            dlog(DLOG_LEVEL_INFO, "ESDP requested TLS, announcing NO-TLS");
++            esdp_response_size = esdp_create_response(buffer_esdp, sdp_query->v2g_ctx->local_tcp_addr, SDP_SECURITY_NONE,
++                                SDP_TRANSPORT_PROTOCOL_TCP);
++            break;
++        }
++        dlog(DLOG_LEVEL_ERROR, "ESDP requested TLS, announcing nothing");
++        return 1;
++
++    case SDP_SECURITY_NONE:
++        if (sdp_query->v2g_ctx->local_tcp_addr) {
++            dlog(DLOG_LEVEL_INFO, "ESDP requested NO-TLS, announcing NO-TLS");
++            esdp_response_size = esdp_create_response(buffer_esdp, sdp_query->v2g_ctx->local_tcp_addr, SDP_SECURITY_NONE,
++                                SDP_TRANSPORT_PROTOCOL_TCP);
++            break;
++        }
++        if (sdp_query->v2g_ctx->local_tls_addr) {
++            dlog(DLOG_LEVEL_INFO, "ESDP requested NO-TLS, announcing TLS");
++            esdp_response_size = esdp_create_response(buffer_esdp, sdp_query->v2g_ctx->local_tls_addr, SDP_SECURITY_TLS,
++                                SDP_TRANSPORT_PROTOCOL_TCP);
++            break;
++        }
++        dlog(DLOG_LEVEL_ERROR, "ESDP requested NO-TLS, announcing nothing");
++        return 1;
++
++    default:
++        dlog(DLOG_LEVEL_ERROR, "ESDP requested unsupported security 0x%02x, announcing nothing",
++             sdp_query->security_requested);
++        return 1;
++    }
++
++    int return_status = sendto(esdp_socket, buffer_esdp, esdp_response_size, 0, (struct sockaddr*)&sdp_query->remote_addr,
++        sizeof(struct sockaddr_in6));
++
++    if (return_status != esdp_response_size) {
++        rv = -1;
++    }
++    if (DEBUG) {
++        char addrbuf[INET6_ADDRSTRLEN] = {0};
++        const char* addr;
++        int saved_errno = errno;
++
++        addr = inet_ntop(AF_INET6, &sdp_query->remote_addr.sin6_addr, addrbuf, sizeof(addrbuf));
++        if (rv == 0) {
++            dlog(DLOG_LEVEL_INFO, "sendto([%s]:%" PRIu16 ") succeeded for ESDP", addr, ntohs(sdp_query->remote_addr.sin6_port));
++        } else {
++            dlog(DLOG_LEVEL_ERROR, "sendto([%s]:%" PRIu16 ") failed: %s for ESDP", addr, ntohs(sdp_query->remote_addr.sin6_port),
++                 strerror(saved_errno));
++        }
++    }
++    
++    dlog(DLOG_LEVEL_INFO, "Size of ESDPRes message sent: %zu bytes", return_status);
++
++    return rv;
++}
++
++// Function to decode the Standardized ESDP extensions
++int decode_standardized_extensions(const StandardizedExtensions_t *extensions, struct sdp_query* sdp_query) {
++    /* Returns 1 if unable to decode Standardized ESDP extensions and 0 otherwise */
++    /* Requested Security and Transport must be updated in the "sdp_query" struct with the values decoded in HLC Extension (ID 4).
++        Currently these are hardcoded to No-TLS and TCP respectively in "sdp_listen" under esdp */
++    if (!extensions) {
++        dlog(DLOG_LEVEL_ERROR, "No Standardized ESDP extensions to decode");
++        return 1;
++    }
++
++    for (int i = 0; i < extensions -> list.count; i++) {
++        StandardizedExtension_t *ext = extensions -> list.array[i];
++        if (ext) {
++            //dlog(DLOG_LEVEL_INFO, "Extension ID: %ld", ext -> extensionID);
++
++            uint8_t *extensionVal_buf = ext -> extensionValue.buf;
++            ssize_t extensionVal_size = ext -> extensionValue.size;
++
++            switch(ext -> extensionID) {
++                case 1: {
++                    ChargingInterface_t *ev_chrg_int = NULL;
++                    asn_dec_rval_t rval_chrg_int = ber_decode(NULL, &asn_DEF_ChargingInterface, (void **)&ev_chrg_int, 
++                        extensionVal_buf, extensionVal_size);
++                    
++                    if (rval_chrg_int.code == RC_OK) {
++                        dlog(DLOG_LEVEL_INFO, "Successfully decoded Charging Interface extension");
++                        /* Placeholder switch block for future code expansion */
++                        switch(*ev_chrg_int) {
++                            case ChargingInterface_nacs:
++                                dlog(DLOG_LEVEL_INFO, "     Charging Interface: NACS");
++                                break;
++                            case ChargingInterface_ccs1:
++                                dlog(DLOG_LEVEL_INFO, "     Charging Interface: CCS1");
++                                break;
++                            case ChargingInterface_ccs2:
++                                dlog(DLOG_LEVEL_INFO, "     Charging Interface: CCS2");
++                                break;
++                            case ChargingInterface_chademo:
++                                dlog(DLOG_LEVEL_INFO, "     Charging Interface: CHAdeMO");
++                                break;
++                            case ChargingInterface_chaoji:
++                                dlog(DLOG_LEVEL_INFO, "     Charging Interface: Chaoji");
++                                break;
++                            case ChargingInterface_type_1:
++                                dlog(DLOG_LEVEL_INFO, "     Charging Interface: Type-1");
++                                break;
++                            case ChargingInterface_type_2:
++                                dlog(DLOG_LEVEL_INFO, "     Charging Interface: Type-2");
++                                break;
++                            case ChargingInterface_mcs:
++                                dlog(DLOG_LEVEL_INFO, "     Charging Interface: MCS");
++                                break;
++                            default:
++                                dlog(DLOG_LEVEL_ERROR, "    Unknown Charging Interface");
++                                break;
++                        }
++                        ASN_STRUCT_FREE(asn_DEF_ChargingInterface, ev_chrg_int);
++                    } else {
++                        dlog(DLOG_LEVEL_ERROR, "Failed to decode Charging Interface extension");
++                    }
++                    break;
++                }
++                case 2: {
++                    BasicSignaling_t *ev_bsc_sgnlng = NULL;
++                    asn_dec_rval_t rval_bsc_sgnlng = ber_decode(NULL, &asn_DEF_BasicSignaling, (void **)&ev_bsc_sgnlng,
++                                    extensionVal_buf, extensionVal_size);
++                    
++                    if (rval_bsc_sgnlng.code == RC_OK) {
++                        dlog(DLOG_LEVEL_INFO, "Successfully decoded Basic Signaling Protocol extension");
++                        for (int k = 0; k < ev_bsc_sgnlng -> list.count; k++) {
++                            /* Placeholder switch block for future code expansion */
++                            switch(*ev_bsc_sgnlng -> list.array[k]) {
++                                case BasicSignalingProtocol_iec61851_1_ED2:
++                                    dlog(DLOG_LEVEL_INFO, "     Basic Signaling Protocol[%ld]: IEC 61851-01 Ed-02", k+1);
++                                    break;
++                                case BasicSignalingProtocol_iec61851_1_ED3:
++                                    dlog(DLOG_LEVEL_INFO, "     Basic Signaling Protocol[%ld]: IEC 61851-01 Ed-03", k+1);
++                                    break;
++                                case BasicSignalingProtocol_iec61851_23_ED1:
++                                    dlog(DLOG_LEVEL_INFO, "     Basic Signaling Protocol[%ld]: IEC 61851-23 Ed-01", k+1);
++                                    break;
++                                case BasicSignalingProtocol_iec61851_23_ED2:
++                                    dlog(DLOG_LEVEL_INFO, "     Basic Signaling Protocol[%ld]: IEC 61851-23 Ed-02", k+1);
++                                    break;
++                                default:
++                                    dlog(DLOG_LEVEL_ERROR, "    Unknown Basic Signaling Protocol");
++                                    break;
++                            }
++                        }
++                        ASN_STRUCT_FREE(asn_DEF_BasicSignaling, ev_bsc_sgnlng);
++                    } else {
++                        dlog(DLOG_LEVEL_ERROR, "Failed to decode Basic Signaling extension");
++                    }
++                    break;
++                }
++                case 3: {
++                    IPv6Socket_t *ev_ip_socket = NULL;
++                    asn_dec_rval_t rval_ip_socket = ber_decode(NULL, &asn_DEF_IPv6Socket, (void **)&ev_ip_socket,
++                        extensionVal_buf, extensionVal_size);
++                    
++                    dlog(DLOG_LEVEL_WARNING, "ESDPReq payload includes IPv6 Socket extension");
++                    break;
++                }
++                case 4: {
++                    HighLevelCommunication_t *ev_hlc = NULL;
++                    asn_dec_rval_t rval_hlc = ber_decode(NULL, &asn_DEF_HighLevelCommunication, (void **)&ev_hlc,
++                        extensionVal_buf, extensionVal_size);
++                    
++                    if (rval_hlc.code == RC_OK) {
++                        dlog(DLOG_LEVEL_INFO, "Successfully decoded HLC Extension");
++                        /* Placeholder switch block for future code expansion */
++                        for (int ii = 0; ii < ev_hlc -> list.count; ii++) {
++                            HighLevelCommunicationTuple_t *tuple = ev_hlc -> list.array[ii];
++                            switch (tuple -> hlcProtocol) {
++                                case HLCProtocol_din_spec_70121_2014:
++                                    break;
++                                case HLCProtocol_iso_15118_2_2014:
++                                    break;
++                                case HLCProtocol_iso_15118_20_2022:
++                                    break;
++                                default:
++                                    dlog(DLOG_LEVEL_ERROR, "    Unknown HLC Protocol (%ld)", tuple -> hlcProtocol);
++                                    break;
++                            }
++                            for (int jj = 0; jj < tuple -> securityProfileTuple.list.count; jj++) {
++                                SecurityProfileTuple_t *sp_tuple = tuple -> securityProfileTuple.list.array[jj];
++                                switch(sp_tuple -> securityProfile) {
++                                    case SecurityProfile_tcpOnly:
++                                        //sdp_query->security_requested = SDP_SECURITY_NONE;
++                                        break;
++                                    case SecurityProfile_tls12_server:
++                                        //sdp_query->security_requested = SDP_SECURITY_TLS;
++                                        break;
++                                    case SecurityProfile_tls13_mutual:
++                                        break;
++                                    default:
++                                        dlog(DLOG_LEVEL_ERROR, "    Unknown Security Profile (%ld)", sp_tuple -> securityProfile);
++                                        break;
++                                }
++                                for (int kk = 0; kk < sp_tuple -> authorizationMethod.list.count; kk++) {
++                                    AuthorizationMethod_t *auth_method = sp_tuple -> authorizationMethod.list.array[kk];
++                                    switch(*auth_method) {
++                                        case AuthorizationMethod_eim:
++                                            break;
++                                        case AuthorizationMethod_pnc_2:
++                                            break;
++                                        case AuthorizationMethod_pnc_20:
++                                            break;
++                                        default:
++                                            dlog(DLOG_LEVEL_ERROR, "    Unknown Authorization Method (%ld)", *auth_method);
++                                            break;
++                                    }
++                                }
++                                for (int kk = 0; kk < sp_tuple -> energyTransferMode.list.count; kk++) {
++                                    EnergyTransferMode_t *energy_mode = sp_tuple -> energyTransferMode.list.array[kk];
++                                    switch(*energy_mode) {
++                                        case EnergyTransferMode_dc:
++                                            break;
++                                        case EnergyTransferMode_dc_bpt:
++                                            break;
++                                        case EnergyTransferMode_ac:
++                                            break;
++                                        case EnergyTransferMode_ac_bpt:
++                                            break;
++                                        default:
++                                            dlog(DLOG_LEVEL_ERROR, "    Unknown Energy Transfer Mode (%ld)", *energy_mode);
++                                            break;
++                                    }
++                                }
++                            }
++                        }
++                        ASN_STRUCT_FREE(asn_DEF_HighLevelCommunication, ev_hlc);
++                    } else {
++                        dlog(DLOG_LEVEL_ERROR, "Failed to decode HLC extension");
++                    }
++                    break;
++                }
++                case 5: {
++                    EMSPIdentifiers_t *ev_emsp = NULL;
++                    asn_dec_rval_t rval_emsp = ber_decode(NULL, &asn_DEF_EMSPIdentifiers, (void **)&ev_emsp,
++                        extensionVal_buf, extensionVal_size);
++                    
++                    /* if (rval_emsp.code == RC_OK) {
++                        dlog(DLOG_LEVEL_INFO, "Successfully decoded EMSP Identifiers extension");
++                        for (int k = 0; k < ev_emsp -> list.count; k++) {
++                            dlog(DLOG_LEVEL_INFO, "EMSP Identifier[%d]: %s\n", k+1, ev_emsp -> list.array[k] -> buf);
++                        }
++                        ASN_STRUCT_FREE(asn_DEF_EMSPIdentifiers, ev_emsp);
++                    } else {
++                        dlog(DLOG_LEVEL_ERROR, "Failed to decode EMSP Identifiers extension");
++                    } */
++                    dlog(DLOG_LEVEL_WARNING, "ESDPReq payload includes EMSP Identifiers extension");
++                    break;
++                }
++                case 6: {
++                    DCChargingLimits_t *ev_limits = NULL;
++                    asn_dec_rval_t rval_limits = ber_decode(NULL, &asn_DEF_DCChargingLimits, (void **)&ev_limits,
++                                    extensionVal_buf, extensionVal_size);
++                    
++                    if (rval_limits.code == RC_OK) {
++                        dlog(DLOG_LEVEL_INFO, "Successfully decoded DC Charging Limits extension");
++                        dlog(DLOG_LEVEL_INFO, "     Maximum Voltage: %ld [V]\n", ev_limits -> maximumVoltage);
++                        dlog(DLOG_LEVEL_INFO, "     Minimum Voltage: %ld [V]\n", ev_limits -> minimumVoltage);
++                        ASN_STRUCT_FREE(asn_DEF_DCChargingLimits, ev_limits);
++                    } else {
++                        dlog(DLOG_LEVEL_ERROR,"Failed to decode DC Charging Limits extension");
++                    }
++                    break;
++                }
++                case 7: {
++                    ConductiveChargingInterfaceLimitations_t *ev_interface_limits = NULL;
++                    asn_dec_rval_t rval_int_limits = ber_decode(NULL, &asn_DEF_ConductiveChargingInterfaceLimitations,
++                                    (void **)&ev_interface_limits, extensionVal_buf, extensionVal_size);
++                    
++                    if (rval_int_limits.code == RC_OK) {
++                        dlog(DLOG_LEVEL_INFO, "Successfully decoded Conductive Charging Interface Limitations extension");
++                        dlog(DLOG_LEVEL_INFO, "     Maximum Contactor Temp: %ld [C]\n", ev_interface_limits -> maximumContactorTemperature);
++                        ASN_STRUCT_FREE(asn_DEF_ConductiveChargingInterfaceLimitations, ev_interface_limits);
++                    } else {
++                        dlog(DLOG_LEVEL_ERROR, "Failed to decode Conductive Charging Interface Limitations extension");
++                    }
++                    break;
++                }
++                case 8: {
++                    EVCharacteristics_t *evChar = NULL;
++                    asn_dec_rval_t rval_evChar = ber_decode(NULL, &asn_DEF_EVCharacteristics, (void **)&evChar,
++                                    extensionVal_buf, extensionVal_size);
++
++                    if(rval_evChar.code == RC_OK) {
++                        dlog(DLOG_LEVEL_INFO, "Successfully decoded EV Characteristics extension");
++                        if (evChar -> vehicleIdentificationNumber -> size > 0) {
++                            dlog(DLOG_LEVEL_INFO, "     VIN (in Hex format): %02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X",
++                                evChar->vehicleIdentificationNumber -> buf[0], evChar->vehicleIdentificationNumber -> buf[1],
++                                evChar -> vehicleIdentificationNumber -> buf[2], evChar -> vehicleIdentificationNumber -> buf[3],
++                                evChar -> vehicleIdentificationNumber -> buf[4], evChar -> vehicleIdentificationNumber -> buf[5],
++                                evChar -> vehicleIdentificationNumber -> buf[6], evChar -> vehicleIdentificationNumber -> buf[7],
++                                evChar -> vehicleIdentificationNumber -> buf[8], evChar -> vehicleIdentificationNumber -> buf[9],
++                                evChar -> vehicleIdentificationNumber -> buf[10], evChar -> vehicleIdentificationNumber -> buf[11],
++                                evChar -> vehicleIdentificationNumber -> buf[12], evChar -> vehicleIdentificationNumber -> buf[13],
++                                evChar -> vehicleIdentificationNumber -> buf[14], evChar -> vehicleIdentificationNumber -> buf[15],
++                                evChar -> vehicleIdentificationNumber -> buf[16]);
++                            for (size_t i = 0; i < evChar -> vehicleIdentificationNumber -> size; i++) {
++                                //printf("%02X", evChar -> vehicleIdentificationNumber -> buf[i]);
++                            }
++                        } else {
++                            dlog(DLOG_LEVEL_WARNING, "Vehicle Identification Number was NOT communicated");
++                        }
++                        if (evChar -> evccSoftwareVersion -> size > 0) {
++                            dlog(DLOG_LEVEL_INFO, "     EVCC Software Version: %.*s\n", (int)evChar -> evccSoftwareVersion -> size,
++                                evChar -> evccSoftwareVersion -> buf);
++                        } else {
++                            dlog(DLOG_LEVEL_WARNING, "EVCC Software version was NOT communicated");
++                        }
++                        ASN_STRUCT_FREE(asn_DEF_EVCharacteristics, evChar);
++                    } else {
++                        dlog(DLOG_LEVEL_ERROR, "Failed to decode EV Characteristics extension");
++                    }
++                    break;
++                }
++                case 9: {
++                    dlog(DLOG_LEVEL_WARNING, "ESDPReq payload includes Charging Station Characteristics extension");
++                    break;
++                }
++                default:
++                    dlog(DLOG_LEVEL_WARNING, "Unknown Extension ID: %ld", ext -> extensionID);
++                    break;
++            }
++        }
++    }
++
++    /* Since Transport protocol is not included in HLC Extension under ESDP Standardized extensions,
++        this is currently being hardcoded*/
++    sdp_query->proto_requested = SDP_TRANSPORT_PROTOCOL_TCP;
++    
++    /* Currently hardcoding security to No-TLS. This line can be removed when this value starts getting 
++        set from decoded HLC Extension */
++    sdp_query->security_requested = SDP_SECURITY_NONE;
++
++    return 0;
++}
++
++// Function to decode ESDP extensions in V2GTP payload in ESDPReq message
++int decode_esdp_payload(uint8_t* buffer, struct sdp_query* sdp_query, ssize_t recv_len) {
++    /* Returns 1 if unable to decode esdp extensions and 0 otherwise*/
++
++    int dec_std_ext_return;
++    ssize_t asn1_payload_size = recv_len - SDP_HEADER_LEN - 4;
++
++    // Create a new buffer which only contains the ASN1 encoded ESDP extensions
++    uint8_t *buffer_esdp = (uint8_t *)calloc(asn1_payload_size, sizeof(uint8_t)); // "4" Since ESDPVersion, max payload size, require 2 bytes each.
++
++    // Copy ESDP Extensions from received message buffer to the new buffer.
++    memcpy(buffer_esdp, buffer + SDP_HEADER_LEN + 4, asn1_payload_size);
++
++    /* Decode the buffer into "extensions" object*/
++    Extensions_t *extensions = (Extensions_t *)calloc(1, sizeof(Extensions_t));
++
++    asn_dec_rval_t rval = asn_decode(NULL, ATS_DER, &asn_DEF_Extensions, (void **)&extensions, buffer_esdp, asn1_payload_size);
++    if (rval.code != RC_OK) {
++        dlog(DLOG_LEVEL_ERROR, "Decoding failed at byte %ld", rval.consumed);
++        ASN_STRUCT_FREE(asn_DEF_Extensions, extensions);
++        return 1;
++    } else {
++        dlog(DLOG_LEVEL_INFO, "Successully decoded ESDPReq payload");
++    }
++
++    /* Decode Standardized Extensions*/
++    dec_std_ext_return = decode_standardized_extensions(&extensions -> standardized, sdp_query);
++    
++    if (dec_std_ext_return) {
++        dlog(DLOG_LEVEL_ERROR, "Failed to decode Standardized Extensions in ESDPReq payload");
++    } else {
++        dlog(DLOG_LEVEL_INFO, "Successfully decoded Standardized Extensions in ESDPReq payload");
++    }
++    
++    /* Check presence of external extensions per ISO/PAS CD 15118-200:2024(E)*/
++    
++    if (extensions -> external) {
++        dlog(DLOG_LEVEL_INFO, "External ESDP Extensions present in the received ESDPReq message");
++        // Define a function to decode external extensions and call it here.
++    } else {
++        dlog(DLOG_LEVEL_INFO, "External ESDP Extensions NOT present in the received ESDPReq message");
++    }
++
++    return 0;
++}
++
+ int sdp_init(struct v2g_context* v2g_ctx) {
+     struct sockaddr_in6 sdp_addr = {AF_INET6, htons(SDP_SRV_PORT)};
++    struct sockaddr_in6 esdp_addr = {AF_INET6, htons(ESDP_SRV_PORT)}; // For ESDP
+     struct ipv6_mreq mreq = {{IN6ADDR_ALLNODES}, 0};
+     int enable = 1;
+ 
+@@ -215,22 +1031,45 @@ int sdp_init(struct v2g_context* v2g_ctx) {
+         dlog(DLOG_LEVEL_ERROR, "socket() failed: %s", strerror(errno));
+         return -1;
+     }
++    
++    /* create receiving esdp socket for ESDP*/
++    v2g_ctx->esdp_socket = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
++    if (v2g_ctx->esdp_socket == -1) {
++        dlog(DLOG_LEVEL_ERROR, "socket() failed for ESDP: %s", strerror(errno));
++        return -1;
++    }    
+ 
+     if (setsockopt(v2g_ctx->sdp_socket, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(enable)) == -1) {
+         dlog(DLOG_LEVEL_ERROR, "setsockopt(SO_REUSEPORT) failed: %s", strerror(errno));
+         close(v2g_ctx->sdp_socket);
+         return -1;
+     }
+-
++    
++    /* enable the Option "SO_REUSEPORT" for ESDP socket */
++    if (setsockopt(v2g_ctx->esdp_socket, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(enable)) == -1) {
++        dlog(DLOG_LEVEL_ERROR, "setsockopt(SO_REUSEPORT) failed for ESDP: %s", strerror(errno));
++        close(v2g_ctx->esdp_socket);
++        return -1;
++    }
++    
+     sdp_addr.sin6_addr = in6addr_any;
++    esdp_addr.sin6_addr = in6addr_any; // For ESDP
+ 
+     if (bind(v2g_ctx->sdp_socket, (struct sockaddr*)&sdp_addr, sizeof(sdp_addr)) == -1) {
+         dlog(DLOG_LEVEL_ERROR, "bind() failed: %s", strerror(errno));
+         close(v2g_ctx->sdp_socket);
+         return -1;
+     }
+-
++    
++    /* bind esdp_socket to esdp_addr for ESDP */
++    if (bind(v2g_ctx->esdp_socket, (struct sockaddr*)&esdp_addr, sizeof(esdp_addr)) == -1) {
++        dlog(DLOG_LEVEL_ERROR, "bind() failed for ESDP socket: %s", strerror(errno));
++        close(v2g_ctx->esdp_socket);
++        return -1;
++    }
++    
+     dlog(DLOG_LEVEL_INFO, "SDP socket setup succeeded");
++    dlog(DLOG_LEVEL_INFO, "ESDP socket setup succeeded"); // For ESDP
+ 
+     /* bind only to specified device */
+     if (setsockopt(v2g_ctx->sdp_socket, SOL_SOCKET, SO_BINDTODEVICE, v2g_ctx->if_name, strlen(v2g_ctx->if_name)) ==
+@@ -240,7 +1079,16 @@ int sdp_init(struct v2g_context* v2g_ctx) {
+         return -1;
+     }
+ 
++    /* bind ESDP socket only to specified device for ESDP */
++    if (setsockopt(v2g_ctx->esdp_socket, SOL_SOCKET, SO_BINDTODEVICE, v2g_ctx->if_name, strlen(v2g_ctx->if_name)) ==
++        -1) {
++        dlog(DLOG_LEVEL_ERROR, "setsockopt(SO_BINDTODEVICE) failed for ESDP: %s", strerror(errno));
++        close(v2g_ctx->esdp_socket);
++        return -1;
++    }
++
+     dlog(DLOG_LEVEL_TRACE, "bind only to specified device");
++    dlog(DLOG_LEVEL_TRACE, "bind only to specified device for ESDP");
+ 
+     /* join multicast group */
+     if (setsockopt(v2g_ctx->sdp_socket, IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq, sizeof(mreq)) == -1) {
+@@ -249,7 +1097,15 @@ int sdp_init(struct v2g_context* v2g_ctx) {
+         return -1;
+     }
+ 
++    /* join multicast group for ESDP socket */
++    if (setsockopt(v2g_ctx->esdp_socket, IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq, sizeof(mreq)) == -1) {
++        dlog(DLOG_LEVEL_ERROR, "setsockopt(IPV6_JOIN_GROUP) failed for ESDP: %s", strerror(errno));
++        close(v2g_ctx->esdp_socket);
++        return -1;
++    }
++
+     dlog(DLOG_LEVEL_TRACE, "joined multicast group");
++    dlog(DLOG_LEVEL_TRACE, "joined multicast group for ESDP");
+ 
+     return 0;
+ }
+@@ -258,14 +1114,21 @@ int sdp_listen(struct v2g_context* v2g_ctx) {
+     /* Init pollfd struct */
+     struct pollfd pollfd = {v2g_ctx->sdp_socket, POLLIN, 0};
+ 
++    /* Init pollfd struct for ESDP socket */
++    struct pollfd pollfd_esdp = {v2g_ctx->esdp_socket, POLLIN, 0};
++
+     while (!v2g_ctx->shutdown) {
+         uint8_t buffer[SDP_HEADER_LEN + SDP_REQUEST_PAYLOAD_LEN];
++        uint8_t buffer_esdp[SDP_HEADER_LEN + MAX_ESDP_REQUEST_PAYLOAD_LEN]; // For ESDP
++        memset(buffer_esdp, 0, sizeof(buffer_esdp)); // For ESDP
+         char addrbuf[INET6_ADDRSTRLEN] = {0};
+         const char* addr = addrbuf;
+         struct sdp_query sdp_query = {
+             .v2g_ctx = v2g_ctx,
+         };
+         socklen_t addrlen = sizeof(sdp_query.remote_addr);
++        int func_return;
++        int decode_return;
+ 
+         /* Check if data was received on socket */
+         signed status = poll(&pollfd, 1, POLL_TIMEOUT);
+@@ -310,11 +1173,79 @@ int sdp_listen(struct v2g_context* v2g_ctx) {
+ 
+             sdp_send_response(v2g_ctx->sdp_socket, &sdp_query);
+         }
++        
++        /* Check if data was received on esdp socket for ESDP */
++        signed status_esdp = poll(&pollfd_esdp, 1, POLL_TIMEOUT);
++        
++        // If the call did not succeed because it was interrupted for ESDP
++        if (status_esdp == -1) {
++            if (errno == EINTR) {
++                continue;
++            } else {
++                dlog(DLOG_LEVEL_ERROR, "poll() failed for ESDP: %s", strerror(errno));
++                continue;
++            }
++        }
++        /* If new data was received, handle esdp request for ESDP */
++        if (status_esdp > 0) {
++            ssize_t len = recvfrom(v2g_ctx->esdp_socket, buffer_esdp, sizeof(buffer_esdp), 0,
++                                   (struct sockaddr*)&sdp_query.remote_addr, &addrlen);
++            
++            uint32_t reported_len;  // Payload size/length reported in V2GTP Header  
++            reported_len = (buffer_esdp[4] << 24) + (buffer_esdp[5] << 16) + (buffer_esdp[6] << 8) + buffer_esdp[7];
++            uint16_t max_v2gtp_payload_size;    // Maximum payload size in bytes that EVCC can receive. Per [V2G200-52-3] in ISO/PAS CD 15118-200:2024(E) - STANDARD NOT YET PUBLISHED
++
++            if (len == -1) {
++                if (errno != EINTR)
++                    dlog(DLOG_LEVEL_ERROR, "recvfrom() failed for ESDP: %s", strerror(errno));
++                continue;
++            } else {
++                dlog(DLOG_LEVEL_INFO, "Recieved ESDP packet. Reported payload length is %" PRIu32 " bytes while received payload length is %zu bytes",
++                     reported_len ,len - SDP_HEADER_LEN);
++            }
++
++            addr = inet_ntop(AF_INET6, &sdp_query.remote_addr.sin6_addr, addrbuf, sizeof(addrbuf));
++
++            func_return = esdp_validate_header(buffer_esdp, ESDP_REQUEST_TYPE, MAX_ESDP_REQUEST_PAYLOAD_LEN, ESDP_VERSION);
++            
++            if (func_return == -1) {
++                dlog(DLOG_LEVEL_WARNING, "Packet with invalid ESDP header received from [%s]:%" PRIu16, addr,
++                     ntohs(sdp_query.remote_addr.sin6_port));
++                continue;
++            } else if (func_return == 1) {
++            	continue;
++            }
++            
++            max_v2gtp_payload_size = (buffer_esdp[SDP_HEADER_LEN + 2] << 8) + buffer_esdp[SDP_HEADER_LEN + 3];
++            if (max_v2gtp_payload_size > 0) {
++                dlog(DLOG_LEVEL_INFO, "EVCC's reported Max V2GTP Payload size: %" PRIu16 " bytes", max_v2gtp_payload_size);
++            } else {
++                dlog(DLOG_LEVEL_ERROR, "Invalid Max V2GTP Payload size");
++            }
++            
++            // Decode ESDP payload here 
++            decode_return = decode_esdp_payload(buffer_esdp, &sdp_query, len);
++
++            if (decode_return) {
++                dlog(DLOG_LEVEL_WARNING, "Unable to decode ESDP Extensions from ESDPReq message. Discarded ESDP packet received from [%s]:%" PRIu16,
++                 ntohs(sdp_query.remote_addr.sin6_port));
++                continue;
++            }
++
++            dlog(DLOG_LEVEL_INFO, "Received ESDP packet from [%s]:%" PRIu16 " with security 0x%02x and protocol 0x%02x",
++                 addr, ntohs(sdp_query.remote_addr.sin6_port), sdp_query.security_requested, sdp_query.proto_requested);
++
++            esdp_send_response(v2g_ctx->esdp_socket, &sdp_query);
++        }
+     }
+ 
+     if (close(v2g_ctx->sdp_socket) == -1) {
+         dlog(DLOG_LEVEL_ERROR, "close() failed: %s", strerror(errno));
+     }
+ 
++    if (close(v2g_ctx->esdp_socket) == -1) {
++        dlog(DLOG_LEVEL_ERROR, "close() failed for ESDP socket: %s", strerror(errno));
++    }
++
+     return 0;
+ }
+diff --git a/modules/EvseV2G/tests/CMakeLists.txt b/modules/EvseV2G/tests/CMakeLists.txt
+index 1d2e5477..a14e4fa2 100644
+--- a/modules/EvseV2G/tests/CMakeLists.txt
++++ b/modules/EvseV2G/tests/CMakeLists.txt
+@@ -161,6 +161,7 @@ target_link_libraries(${SDP_NAME}
+         cbv2g::tp
+         everest::framework
+         everest::tls
++        asn1_modules
+ )
+ 
+ add_test(${SDP_NAME} ${SDP_NAME})
+diff --git a/modules/EvseV2G/v2g.hpp b/modules/EvseV2G/v2g.hpp
+index d01ae40c..ffad670f 100644
+--- a/modules/EvseV2G/v2g.hpp
++++ b/modules/EvseV2G/v2g.hpp
+@@ -209,6 +209,7 @@ struct v2g_context {
+     enum tls_security_level tls_security;
+ 
+     int sdp_socket;
++    int esdp_socket; // Added for ESDP.
+     int tcp_socket;
+ 
+     int udp_port;
+diff --git a/modules/EvseV2G/v2g_ctx.cpp b/modules/EvseV2G/v2g_ctx.cpp
+index 65862999..2d359623 100644
+--- a/modules/EvseV2G/v2g_ctx.cpp
++++ b/modules/EvseV2G/v2g_ctx.cpp
+@@ -325,6 +325,7 @@ struct v2g_context* v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase,
+     ctx->network_read_timeout_tls = 5000;
+ 
+     ctx->sdp_socket = -1;
++    ctx->esdp_socket = -1; // Added for ESDP
+     ctx->tcp_socket = -1;
+     ctx->tls_socket.fd = -1;
+ #ifdef EVEREST_MBED_TLS
+diff --git a/modules/OCPP201/OCPP201.cpp b/modules/OCPP201/OCPP201.cpp
+index 0c3d953f..81bb3eb2 100644
+--- a/modules/OCPP201/OCPP201.cpp
++++ b/modules/OCPP201/OCPP201.cpp
+@@ -1313,6 +1313,9 @@ void OCPP201::process_reservation_end(const int32_t evse_id, const int32_t conne
+ }
+ 
+ void OCPP201::publish_charging_schedules(const std::vector<ocpp::v2::CompositeSchedule>& composite_schedules) {
++    EVLOG_info << "About to publish composite charging schedules: ";
++    for (ocpp::v2::CompositeSchedule cs: composite_schedules)
++        EVLOG_info << cs << '\n';
+     const auto everest_schedules = conversions::to_everest_charging_schedules(composite_schedules);
+     this->p_ocpp_generic->publish_charging_schedules(everest_schedules);
+ }
+diff --git a/modules/PyEvJosev/module.py b/modules/PyEvJosev/module.py
+index 5a570c84..ffa35073 100644
+--- a/modules/PyEvJosev/module.py
++++ b/modules/PyEvJosev/module.py
+@@ -97,8 +97,26 @@ class PyEVJosevModule():
+     # implementation handlers
+ 
+     def _handler_start_charging(self, args) -> bool:
++        print(args)
++
++        log.debug("in handle start charging")
++        log.debug("DepartureTime " + str(args["DepartureTime"]))
++        log.debug("EAmount " + str(args["EAmount"]))
++        log.debug("EnergyTransferMode " + args["EnergyTransferMode"])
++        # log.debug("PaymentOption " + args["PaymentOption"])
++
++        log.debug("existing DT" + str(self._es.DepartureTime))
++        self._es.DepartureTime = args['DepartureTime']
++        log.debug("set departure time")
++
++        log.debug("existing EAmount" + str(self._es.EAmount))
++        self._es.EAmount = args['EAmount']
++        log.debug("set EAmount")
+ 
+         self._es.EnergyTransferMode = args['EnergyTransferMode']
++        # self._es.PaymentOption = args["PaymentOption"]
++        
++        log.debug("WHERE GO NOW??")
+ 
+         self._ready_event.set()
+ 
+@@ -132,5 +150,10 @@ class PyEVJosevModule():
+     def _handler_enable_sae_j2847_v2g_v2h(self, args):
+         self._es.SAEJ2847_V2H_V2G_Active = True
+ 
++    # def _handler_iso_set_departure_time(self, args):
++    #     log.debug("in handle set departure time")
++    #     self._es.DepartureTime = args['DepartureTime']
++    #     self._es.EAmount = args['EAmount']
++
+ py_ev_josev = PyEVJosevModule()
+ py_ev_josev.start_evcc_handler()
