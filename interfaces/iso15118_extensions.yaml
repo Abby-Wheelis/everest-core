@@ -3,7 +3,7 @@ cmds:
   set_get_certificate_response:
     description: >-
       CertificateInstallationRes/CertificateUpdateRes - Set the new/updated Contract Certificate (including the certificate chain)
-      and the corresponding encrypted private key. Should be forwared to EVCC.
+      and the corresponding encrypted private key. Should be forwarded to EVCC.
       This is an async response to a previously published iso15118_certificate_request
     arguments:
       certificate_response:
@@ -25,3 +25,12 @@ vars:
       has to be sent during the 'ChargeParameterDiscoveryReq' state machine
     type: object
     $ref: /iso15118#/ChargingNeeds
+  ev_info:
+    description: >-
+      The ISO15118 ev information concerning the certificates used for TLS, the supported protocols and evccId.
+    type: object
+    $ref: /iso15118#/EvInformation
+  service_renegotiation_supported:
+    description: >-
+      Indicates whether service renegotiation is supported or not.
+    type: boolean

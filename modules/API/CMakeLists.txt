@@ -1,34 +1,19 @@
-#
-# AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-# template version 3
-#
-
-# module setup:
-#   - ${MODULE_NAME}: module name
-ev_setup_cpp_module()
-
-# ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
-# insert your custom targets and additional config variables here
-target_link_libraries(${MODULE_NAME}
-    PRIVATE
-        ryml::ryml
-        everest::external_energy_limits
-)
-target_sources(${MODULE_NAME}
-    PRIVATE
-        "limit_decimal_places.cpp"
-        "StartupMonitor.cpp"
-)
-# ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
-
-target_sources(${MODULE_NAME}
-    PRIVATE
-        "main/emptyImpl.cpp"
-)
-
-# ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1
-# insert other things like install cmds etc here
-if(EVEREST_CORE_BUILD_TESTING)
-    add_subdirectory(tests)
-endif()
-# ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1
+ev_add_module(API)
+ev_add_module(EvAPI)
+ev_add_module(auth_consumer_API)
+ev_add_module(auth_token_provider_API)
+ev_add_module(auth_token_validator_API)
+ev_add_module(dc_external_derate_consumer_API)
+ev_add_module(display_message_API)
+ev_add_module(error_history_consumer_API)
+ev_add_module(evse_board_support_API)
+ev_add_module(evse_manager_consumer_API)
+ev_add_module(external_energy_limits_consumer_API)
+ev_add_module(generic_error_raiser_API)
+ev_add_module(isolation_monitor_API)
+ev_add_module(ocpp_consumer_API)
+ev_add_module(over_voltage_monitor_API)
+ev_add_module(power_supply_DC_API)
+ev_add_module(powermeter_API)
+ev_add_module(session_cost_API)
+ev_add_module(system_API)
