@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(everest-core
-    VERSION 2025.4.0
+    VERSION 2025.9.0
     DESCRIPTION "The open operating system for e-mobility charging stations"
 	LANGUAGES CXX C
 )
@@ -9,6 +9,10 @@ project(everest-core
 find_package(everest-cmake 0.5
     COMPONENTS bundling
     PATHS ../everest-cmake
+    NO_DEFAULT_PATH
+)
+find_package(everest-cmake 0.5
+    COMPONENTS bundling
 )
 
 if (NOT everest-cmake_FOUND)
@@ -38,6 +42,7 @@ endif()
 
 option(CREATE_SYMLINKS "Create symlinks to javascript modules and auxillary files - for development purposes" OFF)
 option(CMAKE_RUN_CLANG_TIDY "Run clang-tidy" OFF)
+option(EVEREST_BUILD_API_DOCS "Build EVerest API documentation" OFF)
 option(ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES "Automatically generate and install certificates for development purposes" ON)
 option(EVEREST_ENABLE_RUN_SCRIPT_GENERATION "Enables the generation of run scripts (convenience scripts for starting available configurations)" ON)
 option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
@@ -93,6 +98,10 @@ if(NOT DISABLE_EDM)
 
     # FIXME (aw): we need to set this by hand due to edm
     set(EVEREST_SCHEMA_DIR ${everest-framework_SOURCE_DIR}/schemas)
+
+    if(NOT TARGET SDBusCpp::sdbus-c++)
+        add_library(SDBusCpp::sdbus-c++ ALIAS sdbus-c++)
+    endif()
 else()
     find_package(everest-framework REQUIRED)
     find_package(everest-ocpp REQUIRED)
@@ -108,6 +117,11 @@ else()
     find_package(pugixml REQUIRED)
     find_package(CURL 7.84.0 REQUIRED)
     find_package(ryml REQUIRED)
+    find_package(nlohmann_json REQUIRED)
+
+    find_package(ftxui 6 QUIET) # optional, if not available BringUp module will not be built
+
+    find_package(sdbus-c++ REQUIRED)
 endif()
 
 
@@ -125,6 +139,8 @@ add_subdirectory(lib)
 # config
 # FIXME (aw): this should be optional
 add_subdirectory(config)
+
+add_subdirectory(doc)
 
 ev_install_project()
 

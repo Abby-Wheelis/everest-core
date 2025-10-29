@@ -27,6 +27,8 @@ active_modules:
       session_logging_path: /tmp/everest-logs
       charge_mode: DC
       payment_enable_contract: false
+      bpt_channel: Unified
+      bpt_generator_mode: GridFollowing
     connections:
       bsp:
         - module_id: yeti_driver
@@ -65,7 +67,7 @@ active_modules:
       connector_id: 1
       auto_enable: true
       auto_exec: false
-      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session DC;iso_wait_pwr_ready;iso_wait_for_stop 15;iso_wait_v2g_session_stopped;unplug;
+      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session DC 86400 0;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 15;iso_wait_v2g_session_stopped;unplug;
       dc_target_current: 20
       dc_target_voltage: 400
     connections:
@@ -145,6 +147,12 @@ active_modules:
       error_history:
         - module_id: error_history
           implementation_id: error_history
+  ev_api:
+    module: EvAPI
+    connections:
+      ev_manager:
+        - implementation_id: ev_manager
+          module_id: ev_manager
   error_history:
     module: ErrorHistory
     config_implementation:
