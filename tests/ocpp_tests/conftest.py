@@ -142,6 +142,13 @@ def probe_module(
         module,
         skip_implementation,
         "ProbeModuleConnectorA",
+        "update_allowed_energy_transfer_modes",
+        lambda arg: None,
+    )
+    implement_command(
+        module,
+        skip_implementation,
+        "ProbeModuleConnectorA",
         "withdraw_authorization",
         lambda arg: None,
     )
@@ -157,13 +164,6 @@ def probe_module(
         skip_implementation,
         "ProbeModuleConnectorA",
         "cancel_reservation",
-        lambda arg: None,
-    )
-    implement_command(
-        module,
-        skip_implementation,
-        "ProbeModuleConnectorA",
-        "set_faulted",
         lambda arg: None,
     )
     implement_command(
@@ -240,6 +240,13 @@ def probe_module(
         module,
         skip_implementation,
         "ProbeModuleConnectorB",
+        "update_allowed_energy_transfer_modes",
+        lambda arg: None,
+    )
+    implement_command(
+        module,
+        skip_implementation,
+        "ProbeModuleConnectorB",
         "withdraw_authorization",
         lambda arg: None,
     )
@@ -255,13 +262,6 @@ def probe_module(
         skip_implementation,
         "ProbeModuleConnectorB",
         "cancel_reservation",
-        lambda arg: None,
-    )
-    implement_command(
-        module,
-        skip_implementation,
-        "ProbeModuleConnectorB",
-        "set_faulted",
         lambda arg: None,
     )
     implement_command(
