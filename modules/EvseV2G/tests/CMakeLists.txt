@@ -161,6 +161,7 @@ target_link_libraries(${SDP_NAME}
         cbv2g::tp
         everest::framework
         everest::tls
+        asn1_modules
 )
 
 add_test(${SDP_NAME} ${SDP_NAME})
